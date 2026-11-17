@@ -15,6 +15,8 @@ and MCP server (Streamable HTTP, legacy SSE, stdio proxy) — runs in one
 Next.js process sharing the same application services, so the rules,
 permissions and audit history are identical on every surface.
 
+![MCPocket architecture: external platforms POST items into tubes in the persistent JSON engine; AI agents work them over MCP; the web dashboard monitors everything](docs/architecture.png)
+
 ## Repository layout
 
 MCPocket is open source under the [Apache License 2.0](LICENSE). This
