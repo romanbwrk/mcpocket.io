@@ -1,0 +1,463 @@
+{
+  "folders": [
+    {
+      "id": "eb997770-be3e-57f3-80ce-0f377f67acf7",
+      "parentId": null,
+      "name": "Demo",
+      "description": "Demo folder",
+      "createdAt": "2026-11-01T09:00:00.000Z",
+      "updatedAt": "2026-11-01T09:00:00.000Z"
+    }
+  ],
+  "tubes": [
+    {
+      "id": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "folderId": "eb997770-be3e-57f3-80ce-0f377f67acf7",
+      "name": "Tasks",
+      "description": "Demo contacts for agents to pick up",
+      "enabled": true,
+      "createdAt": "2026-11-01T10:00:00.000Z",
+      "updatedAt": "2026-11-01T10:00:00.000Z",
+      "schemaDefinition": {
+        "type": "object",
+        "required": [
+          "url",
+          "contact",
+          "kind"
+        ],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "0f09ca0e-c75d-585f-9cc9-999cc7f88d74",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "pending",
+      "payload": {
+        "url": "https://acme.test",
+        "contact": "ana@acme.test",
+        "kind": "lead"
+      },
+      "metadata": {},
+      "tags": [
+        "lead"
+      ],
+      "priority": 5,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-05T09:00:00.000Z",
+      "updatedAt": "2026-11-05T09:00:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "57527669-e4cf-53a6-a2e2-7938be874af8",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "pending",
+      "payload": {
+        "url": "https://globex.test",
+        "contact": "bo@globex.test",
+        "kind": "partner"
+      },
+      "metadata": {},
+      "tags": [
+        "partner"
+      ],
+      "priority": 3,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-05T10:00:00.000Z",
+      "updatedAt": "2026-11-05T10:00:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "140bdbb0-ae27-59c2-aac6-3f206cc1fbc1",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "pending",
+      "payload": {
+        "url": "https://initech.test",
+        "contact": "cy@initech.test",
+        "kind": "support"
+      },
+      "metadata": {},
+      "tags": [
+        "support"
+      ],
+      "priority": 4,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-05T11:00:00.000Z",
+      "updatedAt": "2026-11-05T11:00:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "389c4eb8-c957-5a07-8860-1b772480c780",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "pending",
+      "payload": {
+        "url": "https://umbrella.test",
+        "contact": "di@umbrella.test",
+        "kind": "lead"
+      },
+      "metadata": {},
+      "tags": [
+        "lead"
+      ],
+      "priority": 2,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-05T12:00:00.000Z",
+      "updatedAt": "2026-11-05T12:00:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "01fa6e3f-e5f3-5d52-80f4-0117361bb946",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "pending",
+      "payload": {
+        "url": "https://hooli.test",
+        "contact": "ed@hooli.test",
+        "kind": "vendor"
+      },
+      "metadata": {},
+      "tags": [
+        "vendor"
+      ],
+      "priority": 1,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-05T13:00:00.000Z",
+      "updatedAt": "2026-11-05T13:00:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "b5a79795-b2bb-5865-9293-b2b0cd1f1b2a",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "processing",
+      "payload": {
+        "url": "https://wayne.test",
+        "contact": "fa@wayne.test",
+        "kind": "lead"
+      },
+      "metadata": {},
+      "tags": [
+        "lead"
+      ],
+      "priority": 3,
+      "assignedAgent": "agent_demo_01",
+      "leaseExpiresAt": "2026-11-06T09:20:00.000Z",
+      "attempts": 1,
+      "createdAt": "2026-11-06T09:00:00.000Z",
+      "updatedAt": "2026-11-06T09:10:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "c59fdb40-e3b6-581d-a1d1-892650100f3e",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "completed",
+      "payload": {
+        "url": "https://stark.test",
+        "contact": "gi@stark.test",
+        "kind": "partner"
+      },
+      "metadata": {},
+      "tags": [
+        "partner"
+      ],
+      "priority": 2,
+      "assignedAgent": "agent_demo_01",
+      "leaseExpiresAt": null,
+      "attempts": 1,
+      "createdAt": "2026-11-06T10:00:00.000Z",
+      "updatedAt": "2026-11-06T10:05:00.000Z",
+      "completedAt": "2026-11-06T10:05:00.000Z",
+      "result": {
+        "reachable": true,
+        "note": "Replied, meeting booked"
+      }
+    },
+    {
+      "id": "cb1fc2c6-7abb-50a8-8c13-4c93bae73971",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "failed",
+      "payload": {
+        "url": "https://cyberdyne.test",
+        "contact": "hu@cyberdyne.test",
+        "kind": "vendor"
+      },
+      "metadata": {},
+      "tags": [
+        "vendor"
+      ],
+      "priority": 1,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 3,
+      "createdAt": "2026-11-06T11:00:00.000Z",
+      "updatedAt": "2026-11-06T11:30:00.000Z",
+      "completedAt": null,
+      "lastError": {
+        "message": "Website unreachable",
+        "code": "HTTP_TIMEOUT",
+        "at": "2026-11-06T11:30:00.000Z",
+        "attempt": 3,
+        "agentId": "agent_demo_01"
+      }
+    },
+    {
+      "id": "2b166ccd-3aaa-51bc-ac48-7711061bce2b",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "retry",
+      "payload": {
+        "url": "https://tyrell.test",
+        "contact": "io@tyrell.test",
+        "kind": "support"
+      },
+      "metadata": {},
+      "tags": [
+        "support"
+      ],
+      "priority": 2,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 1,
+      "createdAt": "2026-11-06T12:00:00.000Z",
+      "updatedAt": "2026-11-06T12:05:00.000Z",
+      "completedAt": null,
+      "retryAt": "2026-11-06T12:10:00.000Z",
+      "lastError": {
+        "message": "Mailbox temporarily unavailable",
+        "code": "SMTP_451",
+        "at": "2026-11-06T12:05:00.000Z",
+        "attempt": 1,
+        "agentId": "agent_demo_01"
+      }
+    },
+    {
+      "id": "1fab2199-e057-5181-8529-6bc3dacc1695",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "cancelled",
+      "payload": {
+        "url": "https://soylent.test",
+        "contact": "jo@soylent.test",
+        "kind": "lead"
+      },
+      "metadata": {},
+      "tags": [
+        "lead"
+      ],
+      "priority": 0,
+      "assignedAgent": null,
+      "leaseExpiresAt": null,
+      "attempts": 0,
+      "createdAt": "2026-11-06T13:00:00.000Z",
+      "updatedAt": "2026-11-06T13:15:00.000Z",
+      "completedAt": null
+    },
+    {
+      "id": "57dc441e-d8c3-5a25-b2f0-8074ee0f0ea6",
+      "tubeId": "10a3a89e-5f05-50eb-b0d7-28c7209f4177",
+      "status": "archived",
+      "payload": {
+        "url": "https://oscorp.test",
+        "contact": "ka@oscorp.test",
+        "kind": "partner"
+      },
+      "metadata": {},
+      "tags": [
+        "partner"
+      ],
+      "priority": 0,
+      "assignedAgent": "agent_demo_01",
+      "leaseExpiresAt": null,
+      "attempts": 1,
+      "createdAt": "2026-11-04T09:00:00.000Z",
+      "updatedAt": "2026-11-04T12:00:00.000Z",
+      "completedAt": "2026-11-04T10:00:00.000Z",
+      "result": {
+        "reachable": true
+      }
+    }
+  ],
+  "history": [
+    {
+      "id": "4104bfc1-532a-5c69-a756-bf2085f5bae2",
+      "itemId": "0f09ca0e-c75d-585f-9cc9-999cc7f88d74",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-05T09:00:00.000Z"
+    },
+    {
+      "id": "f590c2cc-1707-5d2a-890d-372a3d03896d",
+      "itemId": "57527669-e4cf-53a6-a2e2-7938be874af8",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-05T10:00:00.000Z"
+    },
+    {
+      "id": "d62375bf-2b54-5056-9ad1-a2fdf0c5ebb0",
+      "itemId": "140bdbb0-ae27-59c2-aac6-3f206cc1fbc1",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-05T11:00:00.000Z"
+    },
+    {
+      "id": "52358f18-4a1a-5f1a-9ac1-766776e61762",
+      "itemId": "389c4eb8-c957-5a07-8860-1b772480c780",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-05T12:00:00.000Z"
+    },
+    {
+      "id": "26d55780-0e17-544d-921d-85f413f09354",
+      "itemId": "01fa6e3f-e5f3-5d52-80f4-0117361bb946",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-05T13:00:00.000Z"
+    },
+    {
+      "id": "e8ad74b4-f639-58e1-aa58-e450165957ca",
+      "itemId": "b5a79795-b2bb-5865-9293-b2b0cd1f1b2a",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-06T09:00:00.000Z"
+    },
+    {
+      "id": "6c5f7e1e-140e-52a0-aba2-49186e8f0d42",
+      "itemId": "b5a79795-b2bb-5865-9293-b2b0cd1f1b2a",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "processing",
+      "actor": "agent_demo_01",
+      "createdAt": "2026-11-06T09:10:00.000Z"
+    },
+    {
+      "id": "2880292e-03e4-56c7-9a47-f889b7bfcec4",
+      "itemId": "c59fdb40-e3b6-581d-a1d1-892650100f3e",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-06T10:00:00.000Z"
+    },
+    {
+      "id": "c924fe53-27ea-5db9-8e87-6e87cbf27e3c",
+      "itemId": "c59fdb40-e3b6-581d-a1d1-892650100f3e",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "completed",
+      "actor": "agent_demo_01",
+      "createdAt": "2026-11-06T10:05:00.000Z"
+    },
+    {
+      "id": "13fbd09f-83e3-5de3-97dc-9ea3a55a266e",
+      "itemId": "cb1fc2c6-7abb-50a8-8c13-4c93bae73971",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-06T11:00:00.000Z"
+    },
+    {
+      "id": "41752702-a2cf-5281-8992-006bc5557ca0",
+      "itemId": "cb1fc2c6-7abb-50a8-8c13-4c93bae73971",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "failed",
+      "actor": "agent_demo_01",
+      "createdAt": "2026-11-06T11:30:00.000Z"
+    },
+    {
+      "id": "e62b13f9-7678-574e-bcf5-229c4ab72b68",
+      "itemId": "2b166ccd-3aaa-51bc-ac48-7711061bce2b",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-06T12:00:00.000Z"
+    },
+    {
+      "id": "2781a8b8-ea98-59ae-b2b1-83fd96c41d13",
+      "itemId": "2b166ccd-3aaa-51bc-ac48-7711061bce2b",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "retry",
+      "actor": "agent_demo_01",
+      "createdAt": "2026-11-06T12:05:00.000Z"
+    },
+    {
+      "id": "710b9f71-b9a4-573e-87fb-f1dcfcc8538a",
+      "itemId": "1fab2199-e057-5181-8529-6bc3dacc1695",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-06T13:00:00.000Z"
+    },
+    {
+      "id": "826140b7-bd2b-5908-97fa-ad3956441b90",
+      "itemId": "1fab2199-e057-5181-8529-6bc3dacc1695",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "cancelled",
+      "actor": "seed",
+      "createdAt": "2026-11-06T13:15:00.000Z"
+    },
+    {
+      "id": "9c61ab00-1de4-5b2c-9b8e-f436119e1448",
+      "itemId": "57dc441e-d8c3-5a25-b2f0-8074ee0f0ea6",
+      "action": "created",
+      "newValue": {
+        "status": "pending"
+      },
+      "actor": "seed",
+      "createdAt": "2026-11-04T09:00:00.000Z"
+    },
+    {
+      "id": "cb67e81c-7b64-5610-956e-be5daed02867",
+      "itemId": "57dc441e-d8c3-5a25-b2f0-8074ee0f0ea6",
+      "action": "status_changed",
+      "oldValue": "pending",
+      "newValue": "archived",
+      "actor": "seed",
+      "createdAt": "2026-11-04T12:00:00.000Z"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# Keep the build context small and free of secrets / local data.
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose*.yml
+compose*.yml
+
+node_modules
+.next
+out
+build
+dist
+coverage
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+
+# runtime data & secrets — never baked into the image
+data
+.env*
+*.pem
+
+# planning / editor / agent files
+.scratch
+_dev
+.claude
+.vscode
+.idea
+.DS_Store

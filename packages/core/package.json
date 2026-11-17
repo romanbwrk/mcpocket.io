@@ -1,0 +1,33 @@
+{
+  "name": "@mcpocket/core",
+  "version": "0.0.1",
+  "description": "MCPocket core: persistent JSON collections, task coordination, REST handlers and MCP tools for AI agents.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "homepage": "https://mcpocket.io",
+  "exports": {
+    "./services": "./src/services/index.ts",
+    "./storage": "./src/storage/index.ts",
+    "./mcp/tools": "./src/mcp/tools/index.ts",
+    "./media": "./src/media/index.ts",
+    "./package.json": "./package.json",
+    "./*": "./src/*.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1169.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "mongodb": "^6.22.0",
+    "zod": "^4.6.7"
+  }
+}

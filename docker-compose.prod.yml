@@ -1,0 +1,113 @@
+# MCPocket — production stack: the app + MongoDB 8 (single-node replica set,
+# so every storage commit is a real multi-document transaction).
+#
+#   cp .env.example .env   # fill in the REQUIRED values below + app secrets
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Required in .env:
+#   MCPOCKET_ADMIN_PASSWORD   dashboard admin password
+#   MONGO_ROOT_PASSWORD       MongoDB root (admin only; the app never uses it)
+#   MONGO_APP_PASSWORD        MongoDB account the app connects with
+# Use URL-safe passwords for the Mongo accounts (`openssl rand -hex 24`):
+# MONGO_APP_PASSWORD is embedded in the connection string as-is.
+#
+# MongoDB is reachable only on the internal Docker network (as `mongodb`) and
+# on the host's loopback (127.0.0.1:${MONGO_PORT:-27017}, for admin over an
+# SSH tunnel; connect from there with `?directConnection=true`). Back up with
+#   docker compose -f docker-compose.prod.yml exec mongodb \
+#     mongodump -u root -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin --archive --gzip > backup.gz
+#
+# The app keeps an in-process write lock: run exactly ONE mcpocket replica.
+name: mcpocket
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  mcpocket:
+    build: .
+    image: mcpocket:${MCPOCKET_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      STORAGE_DRIVER: mongo
+      MONGODB_DB: ${MONGODB_DB:-mcpocket}
+      # Overrides any MONGODB_URI in .env (that one is for `npm run dev`).
+      MONGODB_URI: "mongodb://${MONGO_APP_USERNAME:-mcpocket}:${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}@mongodb:27017/${MONGODB_DB:-mcpocket}?replicaSet=rs0&authSource=${MONGODB_DB:-mcpocket}&w=majority&retryWrites=true"
+      # Still used for small runtime files (e.g. the media upload-token key).
+      DATA_DIR: /app/data
+      MCPOCKET_ADMIN_PASSWORD: ${MCPOCKET_ADMIN_PASSWORD:?set MCPOCKET_ADMIN_PASSWORD in .env (see .env.example)}
+    ports:
+      - "${MCPOCKET_PORT:-3000}:3000"
+    volumes:
+      - mcpocket-data:/app/data
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *logging
+
+  mongodb:
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
+      # Read by docker/mongo/initdb.d/01-app-user.js on first start.
+      MONGODB_DB: ${MONGODB_DB:-mcpocket}
+      MONGO_APP_USERNAME: ${MONGO_APP_USERNAME:-mcpocket}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?set MONGO_APP_PASSWORD in .env}
+    # Replica set + auth needs a keyfile (members authenticate each other with
+    # it). Generated once into the config volume, then reused.
+    entrypoint:
+      - bash
+      - -c
+      - |
+        set -e
+        KEYFILE=/data/configdb/rs-keyfile
+        if [ ! -s "$$KEYFILE" ]; then
+          head -c 756 /dev/urandom | base64 -w 0 > "$$KEYFILE"
+        fi
+        chown 999:999 "$$KEYFILE"
+        chmod 400 "$$KEYFILE"
+        exec docker-entrypoint.sh mongod --replSet rs0 --bind_ip_all --keyFile "$$KEYFILE"
+    # Initiates the replica set on first boot (advertised as `mongodb:27017`,
+    # the name the app resolves), then reports healthy once it is PRIMARY.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet --host localhost --port 27017
+          -u "$$MONGO_INITDB_ROOT_USERNAME" -p "$$MONGO_INITDB_ROOT_PASSWORD"
+          --authenticationDatabase admin
+          --eval 'try { rs.status() } catch (e) { rs.initiate({ _id: "rs0", members: [{ _id: 0, host: "mongodb:27017" }] }) } quit(db.hello().isWritablePrimary ? 0 : 1)'
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    ports:
+      - "127.0.0.1:${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongo-data:/data/db
+      - mongo-config:/data/configdb
+      - ./docker/mongo/initdb.d:/docker-entrypoint-initdb.d:ro
+    logging: *logging
+
+volumes:
+  mcpocket-data:
+  mongo-data:
+  mongo-config:
