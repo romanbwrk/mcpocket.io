@@ -150,8 +150,8 @@ describe("services publish domain events after commit", () => {
     const { item } = await svc().items.push(tube.id, { payload: {} })
     events.length = 0
     await expect(
-      svc().items.update(item.id, { status: "completed" })
-    ).rejects.toThrow() // pending → completed is not a manual transition
+      svc().items.update(item.id, { status: "processing" })
+    ).rejects.toThrow() // processing is claim-only
     await svc().items.update(item.id, { priority: item.priority }) // no-op
     await svc().items.push(tube.id, { payload: {}, idempotencyKey: "k" })
     await svc().items.push(tube.id, { payload: {}, idempotencyKey: "k" }) // replay

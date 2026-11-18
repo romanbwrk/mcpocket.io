@@ -44,7 +44,10 @@ import {
 export const ClaimItemInputSchema = z.strictObject({
   /** Tube to claim from. */
   tubeId: IdSchema,
-  /** Lease duration override; defaults to the server's `MCPOCKET_LEASE_SECONDS`. */
+  /**
+   * Lease duration override; defaults to the tube's `leaseSeconds`, else the
+   * server's `MCPOCKET_LEASE_SECONDS`. `0` = the lease never expires.
+   */
   leaseSeconds: LeaseSecondsSchema.optional(),
 })
 export type ClaimItemInput = z.input<typeof ClaimItemInputSchema>
@@ -90,6 +93,11 @@ const ErrorInfoSchema = z.strictObject({
 })
 
 export const FailItemInputSchema = z.strictObject({
+  /**
+   * Any JSON value; stored as `item.result` (like `complete`'s), next to the
+   * error. Media data URIs inside it are uploaded and replaced by their URL.
+   */
+  result: z.unknown().optional(),
   /** A message, or `{ message, code?, details? }`; stored as `item.lastError`. */
   error: z.union([
     z
@@ -128,7 +136,8 @@ export type Claim = {
   itemId: string
   agentId: string
   claimedAt: string
-  leaseExpiresAt: string
+  /** `null` = the lease never expires (`leaseSeconds: 0`). */
+  leaseExpiresAt: string | null
   attempts: number
 }
 
@@ -172,15 +181,24 @@ export function createProcessingService(ctx: ServiceContext, actor: Actor) {
     return actor.id
   }
 
-  /** Explicit seconds → the tube's default → the server default. */
-  const leaseUntil = (now: Date, seconds?: number, tube?: Tube | null) =>
-    new Date(
-      now.getTime() + (seconds ?? tube?.leaseSeconds ?? ctx.leaseSeconds) * 1000
-    ).toISOString()
+  /**
+   * Lease deadline: explicit seconds → the tube's default → the server
+   * default. `0` = no deadline (`null`): the lease never expires.
+   */
+  const leaseUntil = (
+    now: Date,
+    seconds?: number,
+    tube?: Tube | null
+  ): string | null => {
+    const s = seconds ?? tube?.leaseSeconds ?? ctx.leaseSeconds
+    return s === 0 ? null : new Date(now.getTime() + s * 1000).toISOString()
+  }
 
   /**
    * Loads an item and checks the caller holds its live lease:
    * deleted / not processing / expired → 409, other agent's lease → 403.
+   * A manual status change (or delete) ends the lease, so the former holder
+   * gets 409 and changes nothing.
    */
   async function requireLease(
     repos: Repositories,
@@ -475,7 +493,16 @@ export function createProcessingService(ctx: ServiceContext, actor: Actor) {
      * (not claimable before), attempts exhausted → `failed`.
      */
     async fail(id: string, input: unknown): Promise<Item> {
-      const { error } = FailItemInputSchema.parse(input)
+      const parsed = FailItemInputSchema.parse(input)
+      const { error } = parsed
+      let result = parsed.result
+      if (ctx.media && result !== undefined) {
+        ac.require("items:process")
+        // Fail fast before uploading; the transaction checks the lease again.
+        await requireLease(storage, id, requireAgent(), ctx.clock.now())
+        result = await mediaMaterializer(ctx)(result, "result")
+      }
+      const withResult = result !== undefined ? { result } : {}
       return finish(id, "failed", "failed", async (item, ts, repos, now) => {
         const lastError: ItemError = {
           ...error,
@@ -488,8 +515,9 @@ export function createProcessingService(ctx: ServiceContext, actor: Actor) {
         return decision.retry
           ? {
               to: "retry",
-              patch: { lastError, retryAt: decision.retryAt },
+              patch: { lastError, retryAt: decision.retryAt, ...withResult },
               newValue: {
+                ...withResult,
                 error: lastError,
                 retryAt: decision.retryAt,
                 maxAttempts: decision.maxAttempts,
@@ -497,8 +525,12 @@ export function createProcessingService(ctx: ServiceContext, actor: Actor) {
             }
           : {
               to: "failed",
-              patch: { lastError },
-              newValue: { error: lastError, maxAttempts: decision.maxAttempts },
+              patch: { lastError, ...withResult },
+              newValue: {
+                ...withResult,
+                error: lastError,
+                maxAttempts: decision.maxAttempts,
+              },
             }
       })
     },

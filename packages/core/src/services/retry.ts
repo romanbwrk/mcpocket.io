@@ -14,10 +14,15 @@ import { recordHistory } from "./history"
 /** Actor recorded in history for lease-expiry recoveries. */
 export const LEASE_SWEEPER_ACTOR: Actor = systemActor("lease-sweeper")
 
+/**
+ * Whether a `processing` item's lease has run out. A processing item without
+ * `leaseExpiresAt` holds a lease that never expires (`leaseSeconds: 0`).
+ */
 export function isLeaseExpired(item: Item, now: Date): boolean {
   return (
     item.status === "processing" &&
-    (!item.leaseExpiresAt || Date.parse(item.leaseExpiresAt) <= now.getTime())
+    !!item.leaseExpiresAt &&
+    Date.parse(item.leaseExpiresAt) <= now.getTime()
   )
 }
 

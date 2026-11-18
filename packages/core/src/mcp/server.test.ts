@@ -177,6 +177,7 @@ describe("MCP server", () => {
     expect(await ok("delete_tube", { id: tube.id })).toEqual({
       deleted: true,
       id: tube.id,
+      deletedItems: 0,
     })
     expect(await ok("delete_folder", { id: root.id })).toEqual({
       deleted: true,

@@ -510,8 +510,28 @@ expires) → `complete_item` | `fail_item` | `release_item`. The agent identity 
 the session's `X-Agent-Id` / `MCPOCKET_AGENT_ID` — never a tool argument — and
 lease rules match the REST API. Other item tools: `push_item`, `get_item`,
 `update_item`, `delete_item`, `list_items`, `search_items`, `bulk_push_items`,
-`bulk_update_items`, `get_my_items`, `get_item_history` (filters and bulk
-rules: see "Search, filtering & bulk operations" below).
+`bulk_update_items`, `bulk_delete_items`, `get_my_items`, `get_item_history`
+(filters and bulk rules: see "Search, filtering & bulk operations" below).
+
+- **Leases that never expire:** `leaseSeconds: 0` (on `claim_next_item`, or as
+  a tube default via `create_tube` / `update_tube`) — the item stays
+  `processing` until `complete_item`, `fail_item`, `release_item` or a manual
+  status change, is never reclaimed, and `claim.leaseExpiresAt` is `null`.
+- **Manual status changes** (`update_item`, `bulk_update_items`, dashboard):
+  any status from any status except `processing` (→ `validation_error`; only a
+  claim starts processing). `pending` clears the lease, `assignedAgent` and
+  `retryAt` and keeps `createdAt` (the item keeps its place in the queue);
+  `completed` / `failed` / `cancelled` / `archived` / `retry` clear the lease
+  and keep `assignedAgent` for history. Afterwards the former lease holder's
+  `complete_item` / `fail_item` / `release_item` / `heartbeat_item` answer
+  `conflict` and change nothing.
+- **`result` without a lease:** `update_item` / `bulk_update_items` take
+  `result` (any JSON; `null` clears it), recorded as an `updated` history
+  event. `fail_item` also takes an optional `result`, stored next to the error.
+- **`list_tubes`:** `name` matches a tube name exactly; `withCounts: true` adds
+  `counts: { pending, processing, completed, failed, retry, cancelled, archived }`.
+- **`delete_tube { force: true }`** deletes the tube with all of its items in
+  one atomic write → `{ deleted: true, id, deletedItems }`.
 
 **Resources:** `mcpocket://system/info`, `mcpocket://folders/tree`,
 `mcpocket://tubes/{id}` (settings + JSON Schema + item count; listed per tube)
@@ -594,8 +614,13 @@ others. Response: `{ results: [{ index, ok: true, data, created? } | { index, ok
 
 - `POST /api/tubes/{id}/items/bulk` / `bulk_push_items` — `{ items: [{ payload, priority?, tags?, metadata?, idempotencyKey? }] }`.
   Idempotency keys are honoured (also within one batch: `created: false`), payloads validated against the tube schema.
-- `PATCH /api/items/bulk` / `bulk_update_items` — `{ items: [{ id, payload?, metadata?, tags?, priority?, status? }] }`
+- `PATCH /api/items/bulk` / `bulk_update_items` — `{ items: [{ id, payload?, metadata?, tags?, priority?, status?, result? }] }`
   or `{ ids: [...], patch: { ... } }`. Same manual status transitions and history events as `PATCH /api/items/{id}`.
+  Filter form: `{ tubeId, filter: { status?, ...search filters }, patch }` updates every matching item server-side
+  (no 500 cap, all or nothing) → `{ affected }`, e.g. reset all `processing` → `pending`.
+- `bulk_delete_items` (MCP, `items:manage`) — `{ ids: [...] }` (≤ 1000, per-item `results`) or
+  `{ tubeId, status? }` (every match, server-side, no cap) → `{ deleted, results? }`. Soft delete with a
+  `deleted` history event per item; `processing` items are deleted too and lose their lease.
 
 **Tube reset:** `POST /api/tubes/{id}/reset` (needs `items:manage`; also the
 **Reset** button in the tube view) → `{ data: { total, matched, requeued } }`.

@@ -5,11 +5,7 @@ import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { ZodError } from "zod"
 
-import {
-  ConflictError,
-  NotFoundError,
-  ValidationError,
-} from "../domain/errors"
+import { ConflictError, NotFoundError, ValidationError } from "../domain/errors"
 import {
   canTransitionManually,
   ITEM_STATUS_TRANSITIONS,
@@ -172,14 +168,13 @@ describe("item service", () => {
       newValue: { payload: { a: 2 }, priority: 5 },
     })
 
-    // processing only via claim; archived is terminal
+    // processing only via claim; any other status from any status
     await expect(
       services.items.update(item.id, { status: "processing" })
-    ).rejects.toThrow(ConflictError)
+    ).rejects.toThrow(ValidationError)
     await services.items.update(item.id, { status: "archived" })
-    await expect(
-      services.items.update(item.id, { status: "pending" })
-    ).rejects.toThrow(ConflictError)
+    await services.items.update(item.id, { status: "pending" })
+    await services.items.update(item.id, { status: "archived" })
 
     // no-op update writes nothing
     const before = (await services.items.history(item.id)).page.total
@@ -197,7 +192,10 @@ describe("item service", () => {
 
   it("transition table: processing is claim-only, completed sets completedAt", async () => {
     expect(canTransitionManually("pending", "processing")).toBe(false)
+    expect(canTransitionManually("processing", "processing")).toBe(false)
     expect(canTransitionManually("processing", "completed")).toBe(true)
+    expect(canTransitionManually("archived", "pending")).toBe(true)
+    expect(canTransitionManually("completed", "failed")).toBe(true)
     expect(ITEM_STATUS_TRANSITIONS.archived).toEqual([])
 
     const { item } = await services.items.push(tube.id, { payload: {} })
@@ -208,7 +206,7 @@ describe("item service", () => {
     })
     const done = await services.items.update(item.id, { status: "completed" })
     expect(done.completedAt).toBeTruthy()
-    expect(done.assignedAgent).toBeNull()
+    expect(done.assignedAgent).toBe("bot-2") // kept for history
     expect(done.leaseExpiresAt).toBeNull()
   })
 
@@ -313,12 +311,12 @@ describe("item service", () => {
 
   it("retry / cancel from processing end the lease", async () => {
     for (const status of ["retry", "cancelled"] as const) {
-      const { item } = await services.items.push(tube.id, { payload: {} })
-      await services.processing.claim({ tubeId: tube.id })
-      const updated = await services.items.update(item.id, { status })
+      await services.items.push(tube.id, { payload: {} })
+      const claimed = await services.processing.claim({ tubeId: tube.id })
+      const updated = await services.items.update(claimed!.item.id, { status })
       expect(updated).toMatchObject({
         status,
-        assignedAgent: null,
+        assignedAgent: "bot-1", // kept for history
         leaseExpiresAt: null,
       })
     }

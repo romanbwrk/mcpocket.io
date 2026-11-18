@@ -134,10 +134,10 @@ describe("item REST routes", () => {
       status: "cancelled",
     })
     res = await itemRoute.PATCH(
-      req(`/api/items/${item.id}`, json("PATCH", { status: "completed" })),
+      req(`/api/items/${item.id}`, json("PATCH", { status: "processing" })),
       params({ id: item.id })
     )
-    expect(res.status).toBe(409)
+    expect(res.status).toBe(400)
     res = await itemRoute.PATCH(
       req(`/api/items/${item.id}`, json("PATCH", { bogus: 1 })),
       params({ id: item.id })

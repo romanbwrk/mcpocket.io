@@ -1,16 +1,21 @@
 import { z } from "zod"
 
-import { PAYLOAD_FILTER_OPERATORS } from "../../domain/item-filter"
+import {
+  PAYLOAD_FILTER_OPERATORS,
+  StatusFilterSchema,
+} from "../../domain/item-filter"
 import type { PageResult } from "../../domain/pagination"
 import { IdSchema, type Item } from "../../domain/schemas"
 import {
   AgentItemsInputSchema,
+  BulkItemFilterSchema,
   ClaimItemInputSchema,
   CompleteItemInputSchema,
   FailItemInputSchema,
   HeartbeatItemInputSchema,
   ItemHistoryInputSchema,
   ListItemsInputSchema,
+  MAX_BULK_DELETE_IDS,
   MAX_BULK_ITEMS,
   PushItemInputSchema,
   ReassignItemInputSchema,
@@ -58,6 +63,13 @@ async function listWithOptions(
 const AGENT_NOTE =
   "The agent is the authenticated MCP session (X-Agent-Id header / MCPOCKET_AGENT_ID), not an argument."
 
+/** Manual status rules shared by update_item and bulk_update_items. */
+const MANUAL_STATUS_NOTE =
+  'status: any status from any status, except "processing" (validation_error: only claim_next_item starts processing). "pending" clears the lease, assignedAgent and retryAt and keeps createdAt, so the item keeps its place in the queue; "completed" / "failed" / "cancelled" / "archived" / "retry" clear the lease and keep assignedAgent for history. After a manual status change the former lease holder\'s complete_item / fail_item / release_item / heartbeat_item answer conflict and change nothing. result: any JSON stored as the item\'s result (null clears it), no lease needed; recorded as an "updated" history event with old and new values.'
+
+const LEASE_NOTE =
+  "leaseSeconds: 0 = the lease never expires: the item stays processing until complete_item, fail_item, release_item or a manual status change, is never reclaimed, and claim.leaseExpiresAt is null."
+
 /** Item management tools (plan §5.3). */
 export const itemTools = [
   defineTool({
@@ -91,8 +103,7 @@ export const itemTools = [
     name: "update_item",
     capability: "items:manage",
     title: "Update item",
-    description:
-      "Update an item's payload, metadata, tags (metadata/tags are replaced, not merged), priority and/or status (manual transitions only; use claim_next_item to start processing). Media data URIs in payload / metadata are uploaded and replaced by their URL (see push_item). Returns { data: Item }.",
+    description: `Update an item's payload, metadata, tags (metadata/tags are replaced, not merged), priority, status and/or result. ${MANUAL_STATUS_NOTE} Media data URIs in payload / metadata / result are uploaded and replaced by their URL (see push_item). Returns { data: Item }.`,
     input: IdArgSchema.extend(UpdateItemInputSchema.shape),
     annotations: { idempotentHint: true },
     run: async (services, args) => {
@@ -117,7 +128,7 @@ export const itemTools = [
     capability: "items:manage",
     title: "Delete item",
     description:
-      "Soft-delete an item (it disappears from lists and can no longer be claimed; its history is kept). Returns { deleted: true, id }.",
+      "Soft-delete an item (it disappears from lists and can no longer be claimed; its history is kept). A processing item is deleted too and loses its lease. Returns { deleted: true, id }.",
     input: IdArgSchema,
     annotations: { destructiveHint: true, idempotentHint: false },
     run: async (services, args) => {
@@ -169,7 +180,7 @@ export const itemTools = [
     name: "bulk_update_items",
     capability: "items:manage",
     title: "Bulk update items",
-    description: `Update up to ${MAX_BULK_ITEMS} items in one atomic write: either per-item changes { items: [{ id, payload?, metadata?, tags?, priority?, status? }] } or one change for many { ids: [...], patch: { ... } }. Same rules and history events as update_item; each entry gets its own result. Media data URIs in payload / metadata are uploaded and replaced by their URL (see push_item). Returns { results: [{ index, ok: true, data } | { index, ok: false, id?, error }], summary: { total, succeeded, failed } }.`,
+    description: `Update many items in one atomic write, in one of three forms: per-item changes { items: [{ id, payload?, metadata?, tags?, priority?, status?, result? }] } or one change for many { ids: [...], patch: { ... } } (up to ${MAX_BULK_ITEMS} entries; each entry gets its own result), or one change for every item of a tube matching a filter { tubeId, filter: { status?, assignedAgent?, tags?, priority*, created*, payload? }, patch } (server-side, no cap, all or nothing; e.g. reset all processing → pending with filter: { status: "processing" }, patch: { status: "pending" }). Same rules and history events as update_item (${MANUAL_STATUS_NOTE}). Media data URIs in payload / metadata / result are uploaded and replaced by their URL (see push_item). Returns { results: [{ index, ok: true, data } | { index, ok: false, id?, error }], summary: { total, succeeded, failed } }, or { affected } (items actually changed) for the filter form.`,
     input: z.object({
       items: z
         .array(IdArgSchema.extend(UpdateItemInputSchema.shape))
@@ -177,9 +188,27 @@ export const itemTools = [
         .max(MAX_BULK_ITEMS)
         .optional(),
       ids: z.array(IdSchema).min(1).max(MAX_BULK_ITEMS).optional(),
+      tubeId: IdSchema.optional(),
+      filter: BulkItemFilterSchema.optional(),
       patch: UpdateItemInputSchema.optional(),
     }),
-    run: (services, args) => services.items.bulkUpdate(args),
+    run: (services, args) =>
+      args.tubeId !== undefined || args.filter !== undefined
+        ? services.items.updateWhere(args)
+        : services.items.bulkUpdate(args),
+  }),
+  defineTool({
+    name: "bulk_delete_items",
+    capability: "items:manage",
+    title: "Bulk delete items",
+    description: `Soft-delete many items in one atomic write, with delete_item's rules (a "deleted" history event per item; processing items are deleted too and lose their lease). Either { ids: [...] } (up to ${MAX_BULK_DELETE_IDS}; each id gets its own result) or { tubeId, status? } — every non-deleted item of the tube, optionally only these statuses (one, an array or a comma list), server-side, no cap. Returns { deleted, results? } (results only for the ids form: [{ index, ok: true, data } | { index, ok: false, id, error }]).`,
+    input: z.object({
+      ids: z.array(IdSchema).min(1).max(MAX_BULK_DELETE_IDS).optional(),
+      tubeId: IdSchema.optional(),
+      status: StatusFilterSchema.optional(),
+    }),
+    annotations: { destructiveHint: true, idempotentHint: false },
+    run: (services, args) => services.items.bulkDelete(args),
   }),
 ]
 
@@ -189,7 +218,7 @@ export const processingTools = [
     name: "claim_next_item",
     capability: "items:process",
     title: "Claim next item",
-    description: `Atomically claim the next item of a tube (pending, retry whose backoff retryAt has passed, or an expired lease while attempts remain; highest priority, then oldest) and lease it to you for leaseSeconds (default: the tube's leaseSeconds, else the server default; claim.leaseExpiresAt tells you the deadline). ${AGENT_NOTE} Optional fields: ["payload"] / field: "payload.prompt" trims data to what you need (claim.itemId always holds the id). Returns { claimed: true, data: Item, claim: { itemId, agentId, claimedAt, leaseExpiresAt, attempts } } or { claimed: false, data: null, message } when there is nothing to claim.`,
+    description: `Atomically claim the next item of a tube (pending, retry whose backoff retryAt has passed, or an expired lease while attempts remain; highest priority, then oldest) and lease it to you for leaseSeconds (default: the tube's leaseSeconds, else the server default; claim.leaseExpiresAt tells you the deadline). ${LEASE_NOTE} ${AGENT_NOTE} Optional fields: ["payload"] / field: "payload.prompt" trims data to what you need (claim.itemId always holds the id). Returns { claimed: true, data: Item, claim: { itemId, agentId, claimedAt, leaseExpiresAt, attempts } } or { claimed: false, data: null, message } when there is nothing to claim.`,
     input: ClaimItemInputSchema.extend(ItemProjectionSchema.shape),
     run: async (services, args) => {
       const { input, output } = splitOutputOptions(args)
@@ -223,7 +252,7 @@ export const processingTools = [
     name: "fail_item",
     capability: "items:process",
     title: "Fail item",
-    description: `Mark an item you hold a live lease on as failed. error is a message or { message, code?, details? } (stored as lastError). While the tube's retry policy has attempts left the item goes to "retry" and becomes claimable again after a backoff (retryAt); otherwise it stays "failed". ${AGENT_NOTE} Returns { data: Item }.`,
+    description: `Mark an item you hold a live lease on as failed. error is a message or { message, code?, details? } (stored as lastError); optional result is any JSON stored as the item's result (like complete_item's), next to the error. While the tube's retry policy has attempts left the item goes to "retry" and becomes claimable again after a backoff (retryAt); otherwise it stays "failed". ${AGENT_NOTE} Returns { data: Item }.`,
     input: IdArgSchema.extend(FailItemInputSchema.shape),
     run: async (services, args) => {
       const { id, rest } = splitId(args)
@@ -245,7 +274,7 @@ export const processingTools = [
     name: "heartbeat_item",
     capability: "items:process",
     title: "Heartbeat item",
-    description: `Renew your lease on an item you are processing (leaseSeconds from now; default: the tube's leaseSeconds, else the server default). Heartbeat during long work (e.g. while polling a video generation job). Call it well before leaseExpiresAt, or another agent may reclaim the item. ${AGENT_NOTE} Returns { data: Item }.`,
+    description: `Renew your lease on an item you are processing (leaseSeconds from now; default: the tube's leaseSeconds, else the server default; 0 = never expires). Heartbeat during long work (e.g. while polling a video generation job). Call it well before leaseExpiresAt, or another agent may reclaim the item. ${AGENT_NOTE} Returns { data: Item }.`,
     input: IdArgSchema.extend(HeartbeatItemInputSchema.shape),
     run: async (services, args) => {
       const { id, rest } = splitId(args)

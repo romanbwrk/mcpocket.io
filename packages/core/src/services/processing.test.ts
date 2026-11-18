@@ -109,7 +109,7 @@ describe("processing service: claim", () => {
     })
     expect(res?.item.id).toBe(item.id)
     expect(
-      Date.parse(res!.claim.leaseExpiresAt) - Date.parse(res!.claim.claimedAt)
+      Date.parse(res!.claim.leaseExpiresAt!) - Date.parse(res!.claim.claimedAt)
     ).toBe(10_000)
   })
 
@@ -152,7 +152,7 @@ describe("processing service: claim", () => {
     const services = as("bot")
     await expect(services.processing.claim({})).rejects.toThrow(ZodError)
     await expect(
-      services.processing.claim({ tubeId: tube.id, leaseSeconds: 0 })
+      services.processing.claim({ tubeId: tube.id, leaseSeconds: -1 })
     ).rejects.toThrow(ZodError)
     await expect(
       services.processing.claim({ tubeId: crypto.randomUUID() })

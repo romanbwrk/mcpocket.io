@@ -8,6 +8,7 @@ import {
   hasItemFilter,
   ItemFilterSchema,
   matchesItemFilter,
+  StatusFilterSchema,
 } from "../domain/item-filter"
 import { canTransitionManually } from "../domain/item-status"
 import { validateJsonSchema } from "../domain/json-schema"
@@ -61,12 +62,20 @@ export const UpdateItemInputSchema = z
     metadata: JsonObjectSchema.optional(),
     tags: TagsSchema.optional(),
     priority: PrioritySchema.optional(),
-    /** Must be an allowed manual transition (see `lib/domain/item-status.ts`). */
+    /**
+     * Any status but `processing` (see `canTransitionManually` in
+     * `domain/item-status.ts` for the side effects on lease and agent).
+     */
     status: ItemStatusSchema.optional(),
+    /**
+     * Any JSON value, stored as `item.result`; `null` clears it. No lease
+     * needed. Media data URIs inside it are uploaded and replaced by their URL.
+     */
+    result: z.unknown().optional(),
   })
   .refine((input) => Object.values(input).some((v) => v !== undefined), {
     message:
-      "At least one of payload, metadata, tags, priority, status is required",
+      "At least one of payload, metadata, tags, priority, status, result is required",
   })
 export type UpdateItemInput = z.input<typeof UpdateItemInputSchema>
 
@@ -113,8 +122,18 @@ export type BulkPushItemsInput = { items: PushItemInput[] }
 const BulkUpdateEntrySchema = z.looseObject({ id: IdSchema })
 
 /**
- * Either per-item changes `{ items: [{ id, ...UpdateItemInput }] }` or one
- * change for many items `{ ids: [...], patch: UpdateItemInput }`.
+ * Item filters of a server-side bulk operation (status, assignedAgent,
+ * created range, priority, tags, payload conditions; see
+ * `domain/item-filter.ts`). Empty = every non-deleted item of the tube.
+ */
+export const BulkItemFilterSchema = z.strictObject(ItemFilterSchema.shape)
+
+/**
+ * One of:
+ * - per-item changes `{ items: [{ id, ...UpdateItemInput }] }`,
+ * - one change for many items `{ ids: [...], patch: UpdateItemInput }`,
+ * - one change for every item of a tube matching a filter
+ *   `{ tubeId, filter: { status: "processing" }, patch }` (server-side, no cap).
  */
 export const BulkUpdateItemsInputSchema = z
   .strictObject({
@@ -124,26 +143,79 @@ export const BulkUpdateItemsInputSchema = z
       .min(1)
       .max(MAX_BULK_ITEMS, `At most ${MAX_BULK_ITEMS} entries per bulk request`)
       .optional(),
+    tubeId: IdSchema.optional(),
+    filter: BulkItemFilterSchema.optional(),
     patch: UpdateItemInputSchema.optional(),
   })
   .superRefine((v, ctx) => {
-    const perItem = v.items !== undefined
-    const shared = v.ids !== undefined || v.patch !== undefined
-    if (perItem === shared) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Send either `items` or `ids` + `patch`",
-      })
-    } else if (shared && (v.ids === undefined || v.patch === undefined)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "`ids` and `patch` must be sent together",
-      })
+    const byFilter = v.tubeId !== undefined || v.filter !== undefined
+    const forms = [v.items !== undefined, v.ids !== undefined, byFilter]
+    const issue = (message: string) => ctx.addIssue({ code: "custom", message })
+    if (forms.filter(Boolean).length !== 1) {
+      issue(
+        "Send exactly one of `items`, `ids` + `patch`, or `tubeId` + `filter` + `patch`"
+      )
+    } else if (v.items !== undefined && v.patch !== undefined) {
+      issue("`patch` cannot be combined with `items`")
+    } else if (v.items === undefined && v.patch === undefined) {
+      issue("`patch` is required with `ids` / `tubeId` + `filter`")
+    } else if (byFilter && (v.tubeId === undefined || v.filter === undefined)) {
+      issue("`tubeId` and `filter` must be sent together")
     }
   })
 export type BulkUpdateItemsInput =
   | { items: Array<{ id: string } & UpdateItemInput> }
   | { ids: string[]; patch: UpdateItemInput }
+  | {
+      tubeId: string
+      filter: z.input<typeof BulkItemFilterSchema>
+      patch: UpdateItemInput
+    }
+
+/** Outcome of `bulk_update_items` in its filter form: items actually changed. */
+export type BulkUpdateByFilterResult = { affected: number }
+
+/** Max ids per `bulkDelete` in its ids form. */
+export const MAX_BULK_DELETE_IDS = 1000
+
+/**
+ * Either `{ ids: [...] }` (≤ `MAX_BULK_DELETE_IDS`, per-item results) or
+ * `{ tubeId, status? }`: every non-deleted item of the tube (optionally only
+ * these statuses: one, an array or a comma list), server-side, no cap.
+ */
+export const BulkDeleteItemsInputSchema = z
+  .strictObject({
+    ids: z
+      .array(IdSchema)
+      .min(1)
+      .max(
+        MAX_BULK_DELETE_IDS,
+        `At most ${MAX_BULK_DELETE_IDS} ids per bulk delete`
+      )
+      .optional(),
+    tubeId: IdSchema.optional(),
+    status: StatusFilterSchema.optional(),
+  })
+  .superRefine((v, ctx) => {
+    if ((v.ids === undefined) === (v.tubeId === undefined)) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Send either `ids` or `tubeId` (+ optional `status`)",
+      })
+    } else if (v.ids !== undefined && v.status !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "`status` filters only the `tubeId` form",
+      })
+    }
+  })
+export type BulkDeleteItemsInput = z.input<typeof BulkDeleteItemsInputSchema>
+
+/** Items soft-deleted; the ids form also returns per-item `results`. */
+export type BulkDeleteResult = {
+  deleted: number
+  results?: BulkItemResult[]
+}
 
 /** Outcome of one bulk entry; `index` is its position in the request. */
 export type BulkItemResult =
@@ -235,7 +307,11 @@ function isFresh(item: Item): boolean {
 const EDITABLE_FIELDS = ["payload", "metadata", "tags", "priority"] as const
 
 type JsonObject = Record<string, unknown>
-type MediaFields = { payload?: JsonObject; metadata?: JsonObject }
+type MediaFields = {
+  payload?: JsonObject
+  metadata?: JsonObject
+  result?: unknown
+}
 
 /**
  * Uploads media data URIs in `payload` / `metadata` to S3 and swaps them for
@@ -254,6 +330,9 @@ export async function withMedia<T extends MediaFields>(
   }
   if (input.metadata !== undefined) {
     out.metadata = await materialize(input.metadata, `${prefix}metadata`)
+  }
+  if (input.result !== undefined && input.result !== null) {
+    out.result = await materialize(input.result, `${prefix}result`)
   }
   return out
 }
@@ -415,6 +494,23 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
     parsed: z.output<typeof UpdateItemInputSchema>,
     scope: ScopeView
   ): Promise<Item> {
+    return (await updateOneChanged(repos, id, parsed, scope)).item
+  }
+
+  /** `updateOne` that also tells whether anything was written. */
+  async function updateOneChanged(
+    repos: Repositories,
+    id: string,
+    parsed: z.output<typeof UpdateItemInputSchema>,
+    scope: ScopeView
+  ): Promise<{ item: Item; changed: boolean }> {
+    const status = parsed.status
+    if (status === "processing") {
+      throw new ValidationError(
+        'Status "processing" cannot be set manually: only claim_next_item starts processing',
+        { status }
+      )
+    }
     const item = await requireScopedItem(repos, scope, id)
     requireLive(item)
     const ts = now()
@@ -436,9 +532,18 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
         patch.payload
       )
     }
+    if (parsed.result !== undefined) {
+      // `null` clears the result.
+      const result = parsed.result === null ? undefined : parsed.result
+      if (!isDeepStrictEqual(result, item.result)) {
+        patch.result = result
+        oldValues.result = item.result ?? null
+        newValues.result = parsed.result
+      }
+    }
 
-    const status = parsed.status
     const statusChanged = status !== undefined && status !== item.status
+    const leaseEnded = statusChanged && item.status === "processing"
     if (statusChanged) {
       if (!canTransitionManually(item.status, status)) {
         throw new ConflictError(
@@ -447,17 +552,22 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
         )
       }
       patch.status = status
-      if (item.status === "processing") {
-        // Leaving processing manually ends the lease.
-        patch.assignedAgent = null
+      // A manual change ends any lease: the former holder can no longer
+      // complete / fail / release / heartbeat the item (409).
+      if (item.leaseExpiresAt || item.status === "processing") {
         patch.leaseExpiresAt = null
+      }
+      // Back to the queue: unassigned. `createdAt` is kept, so the item
+      // keeps its place. Other targets keep `assignedAgent` for history.
+      if (status === "pending" && item.assignedAgent) {
+        patch.assignedAgent = null
       }
       if (status === "completed") patch.completedAt = ts
       // A manual status change (incl. "Retry now") drops any backoff delay.
       if (item.retryAt) patch.retryAt = undefined
     }
 
-    if (Object.keys(patch).length === 0) return item // no-op
+    if (Object.keys(patch).length === 0) return { item, changed: false } // no-op
     patch.updatedAt = ts
     const updated = await repos.items.update(id, patch)
     if (!updated) throw new NotFoundError("Item", id)
@@ -474,8 +584,17 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
       await recordHistory(ctx, repos, actor, {
         itemId: id,
         action: "status_changed",
-        oldValue: { status: item.status },
-        newValue: { status },
+        oldValue: {
+          status: item.status,
+          ...(leaseEnded && {
+            assignedAgent: item.assignedAgent ?? null,
+            leaseExpiresAt: item.leaseExpiresAt ?? null,
+          }),
+        },
+        newValue: {
+          status,
+          ...(patch.assignedAgent === null && { assignedAgent: null }),
+        },
         at: ts,
       })
     }
@@ -488,6 +607,42 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
         updated
       )
     )
+    return { item: updated, changed: true }
+  }
+
+  /**
+   * Soft delete of one live item inside the caller's transaction: sets
+   * `deletedAt`, drops a lease (a `processing` item is deleted anyway; its
+   * holder then gets 409), writes a `deleted` history event.
+   */
+  async function deleteOne(
+    repos: Repositories,
+    item: Item,
+    ts: string
+  ): Promise<Item> {
+    requireLive(item)
+    const dropLease = item.status === "processing" || !!item.leaseExpiresAt
+    const updated = await repos.items.update(item.id, {
+      deletedAt: ts,
+      ...(dropLease && { leaseExpiresAt: null }),
+      updatedAt: ts,
+    })
+    if (!updated) throw new NotFoundError("Item", item.id)
+    await recordHistory(ctx, repos, actor, {
+      itemId: item.id,
+      action: "deleted",
+      oldValue: {
+        deletedAt: null,
+        ...(dropLease && {
+          status: item.status,
+          assignedAgent: item.assignedAgent ?? null,
+          leaseExpiresAt: item.leaseExpiresAt ?? null,
+        }),
+      },
+      newValue: { deletedAt: ts },
+      at: ts,
+    })
+    emit(ctx, itemEvent(actor, "deleted", item, updated))
     return updated
   }
 
@@ -730,6 +885,11 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
      */
     async bulkUpdate(input: unknown): Promise<BulkResult> {
       const parsed = BulkUpdateItemsInputSchema.parse(input)
+      if (parsed.tubeId !== undefined) {
+        throw new ValidationError(
+          "The `tubeId` + `filter` form is handled by updateWhere"
+        )
+      }
       ac.require("items:manage")
       const materialize = mediaMaterializer(ctx)
       type Changes = z.output<typeof UpdateItemInputSchema>
@@ -765,6 +925,47 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
         })
       })
       return summarize(results, false)
+    },
+
+    /**
+     * `bulk_update_items { tubeId, filter, patch }`: applies `patch` to every
+     * non-deleted item of the tube matching `filter` (see
+     * `BulkItemFilterSchema`), server-side, no cap — e.g. "reset all
+     * processing → pending". Same rules and history events as `update`;
+     * ONE transaction, all or nothing (any rejected item rolls back all).
+     * `affected` counts the items actually changed.
+     */
+    async updateWhere(input: unknown): Promise<BulkUpdateByFilterResult> {
+      const parsed = BulkUpdateItemsInputSchema.parse(input)
+      if (parsed.tubeId === undefined) {
+        throw new ValidationError("`tubeId` + `filter` + `patch` are required")
+      }
+      ac.require("items:manage")
+      const tubeId = parsed.tubeId
+      const filter = parsed.filter!
+      const patch = await withMedia(mediaMaterializer(ctx), parsed.patch!)
+      return transact(ctx, async (repos) => {
+        const scope = await ac.view(repos)
+        await requireScopedTube(repos, scope, tubeId)
+        const candidates = await repos.items.list({
+          tubeId,
+          ...(filter.status?.length && { status: filter.status }),
+        })
+        const matched = hasItemFilter(filter)
+          ? candidates.filter((item) => matchesItemFilter(item, filter))
+          : candidates
+        let affected = 0
+        for (const item of matched) {
+          const { changed } = await updateOneChanged(
+            repos,
+            item.id,
+            patch,
+            scope
+          )
+          if (changed) affected++
+        }
+        return { affected }
+      })
     },
 
     /**
@@ -806,24 +1007,49 @@ export function createItemService(ctx: ServiceContext, actor: Actor) {
     /** Soft delete: sets `deletedAt`, hides the item from lists, keeps its history. */
     async delete(id: string): Promise<Item> {
       ac.require("items:manage")
+      return transact(ctx, async (repos) =>
+        deleteOne(
+          repos,
+          await requireScopedItem(repos, await ac.view(repos), id),
+          now()
+        )
+      )
+    },
+
+    /**
+     * Soft-deletes many items in ONE transaction with `delete`'s rules
+     * (history event per item; `processing` items are deleted too and lose
+     * their lease). `{ ids }` (≤ `MAX_BULK_DELETE_IDS`) returns per-item
+     * results; `{ tubeId, status? }` deletes every match server-side.
+     */
+    async bulkDelete(input: unknown): Promise<BulkDeleteResult> {
+      const parsed = BulkDeleteItemsInputSchema.parse(input)
+      ac.require("items:manage")
       return transact(ctx, async (repos) => {
-        const item = await requireScopedItem(repos, await ac.view(repos), id)
-        requireLive(item)
+        const scope = await ac.view(repos)
         const ts = now()
-        const updated = await repos.items.update(id, {
-          deletedAt: ts,
-          updatedAt: ts,
+        if (parsed.ids !== undefined) {
+          const results = await eachEntry(
+            parsed.ids.map((id) => ({ id })),
+            async (entry) => {
+              const { id } = entry as { id: string }
+              const item = await requireScopedItem(repos, scope, id)
+              return { data: await deleteOne(repos, item, ts) }
+            }
+          )
+          return {
+            deleted: results.filter((r) => r.ok).length,
+            results,
+          }
+        }
+        const tubeId = parsed.tubeId!
+        await requireScopedTube(repos, scope, tubeId)
+        const matched = await repos.items.list({
+          tubeId,
+          ...(parsed.status?.length && { status: parsed.status }),
         })
-        if (!updated) throw new NotFoundError("Item", id)
-        await recordHistory(ctx, repos, actor, {
-          itemId: id,
-          action: "deleted",
-          oldValue: { deletedAt: null },
-          newValue: { deletedAt: ts },
-          at: ts,
-        })
-        emit(ctx, itemEvent(actor, "deleted", item, updated))
-        return updated
+        for (const item of matched) await deleteOne(repos, item, ts)
+        return { deleted: matched.length }
       })
     },
 

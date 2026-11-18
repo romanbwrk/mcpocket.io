@@ -164,7 +164,7 @@ describe("MCP item tools", () => {
     expect(updated.data).toMatchObject({ priority: 5, metadata: { m: true } })
     expect(
       (await fails(client, "update_item", { id, status: "processing" })).code
-    ).toBe("conflict")
+    ).toBe("validation_error")
 
     expect((await ok(client, "get_item", { id })).data.id).toBe(id)
     const list = await ok(client, "list_items", { tubeId, limit: 10 })
@@ -472,7 +472,7 @@ describe("MCP search & bulk tools", () => {
     })
     expect(perItem.results[1]).toMatchObject({
       ok: false,
-      error: { code: "conflict" },
+      error: { code: "validation_error" },
     })
 
     const err = await fails(client, "search_items", { status: "nope" })

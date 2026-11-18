@@ -32,11 +32,22 @@ export function canTransition(from: ItemStatus, to: ItemStatus): boolean {
   return from === to || ITEM_STATUS_TRANSITIONS[from].includes(to)
 }
 
-/** Whether a manual update (not claim/complete/fail) may move `from` → `to`. */
+/**
+ * Whether a manual update (operator: PATCH / MCP `update_item` / dashboard,
+ * not claim/complete/fail) may move `from` → `to`. Any status may be set
+ * from any status, except `processing` (only a claim starts processing):
+ *
+ * - `pending`: lease, `assignedAgent` and `retryAt` are cleared; `createdAt`
+ *   is kept, so the item keeps its place in the queue.
+ * - `completed` / `failed` / `cancelled` / `archived`: the lease is cleared;
+ *   `assignedAgent` is kept for history.
+ *
+ * Either way the former lease holder can no longer complete / fail /
+ * release / heartbeat the item (409 conflict).
+ */
 export function canTransitionManually(
   from: ItemStatus,
   to: ItemStatus
 ): boolean {
-  if (from === to) return true
-  return !CLAIM_ONLY_STATUSES.includes(to) && canTransition(from, to)
+  return !CLAIM_ONLY_STATUSES.includes(to)
 }

@@ -45,7 +45,7 @@ export const MCP_INSTRUCTIONS =
   "Pipelines: each tube is one stage (e.g. prompts → images → videos → captions → publish). Claim an item, do the work, then call complete_item with next: [{ tubeId, payload }] to add a new pending item to the NEXT stage's existing tube (no tube is created; take tube ids from your task or from get_folder_tree / list_tubes) — completing your item and creating the next items is one atomic write. " +
   "Put your generated media URLs in the next payload (and in result if useful) and copy forward what later stages need (e.g. the original prompt); follow the tube's schemaDefinition (mcpocket://tubes/{id}) when it has one. " +
   "Each new item gets metadata.source = { tubeId, itemId, root } (root = the first item of the chain), and the next stage's agent claims it from that tube. " +
-  "Long jobs (video generation): claim with leaseSeconds above the expected job time or call heartbeat_item before claim.leaseExpiresAt, or another agent reclaims the item and the work is done twice. " +
+  "Long jobs (video generation): claim with leaseSeconds above the expected job time or call heartbeat_item before claim.leaseExpiresAt, or another agent reclaims the item and the work is done twice; leaseSeconds: 0 = a lease that never expires (claim.leaseExpiresAt null). " +
   "Resources: mcpocket://system/info, mcpocket://folders/tree, mcpocket://tubes/{id}, mcpocket://items/{id}. " +
   "Tool results are JSON; errors come back as tool errors with { error: { code, message, details? } } " +
   "(codes: validation_error, not_found, conflict, forbidden, unauthorized, rate_limited, internal_error). " +

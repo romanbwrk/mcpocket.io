@@ -7,18 +7,13 @@ import { ZodError } from "zod"
 
 import { NotFoundError } from "../domain/errors"
 import type { Tube } from "../domain/schemas"
-import {
-  createServiceContext,
-  createServices,
-  MAX_BULK_ITEMS,
-} from "./index"
+import { createServiceContext, createServices, MAX_BULK_ITEMS } from "./index"
 import type { Storage } from "../storage"
 import * as files from "../storage/json/files"
 import { createJsonStorage } from "../storage/json/json-storage"
 
 vi.mock("../storage/json/files", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("../storage/json/files")>()
+  const actual = await importOriginal<typeof import("../storage/json/files")>()
   return { ...actual, writeCollection: vi.fn(actual.writeCollection) }
 })
 const writeCollection = vi.mocked(files.writeCollection)
@@ -292,16 +287,16 @@ describe("bulk update", () => {
       })
     }
 
-    // Same transition table as PATCH: cancelled → completed is not allowed.
+    // Same rules as PATCH: processing is claim-only.
     const invalid = await services.items.bulkUpdate({
       ids: [ids[0]],
-      patch: { status: "completed" },
+      patch: { status: "processing" },
     })
     expect(invalid.results[0]).toMatchObject({
       ok: false,
       error: {
-        code: "conflict",
-        details: { from: "cancelled", to: "completed" },
+        code: "validation_error",
+        details: { status: "processing" },
       },
     })
     // cancelled → pending is an allowed manual transition.

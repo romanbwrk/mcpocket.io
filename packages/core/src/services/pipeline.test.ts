@@ -176,7 +176,7 @@ describe("tube pipeline settings", () => {
     await as("p").items.push(videos.id, { payload: {} })
     const claimed = await as("v").processing.claim({ tubeId: videos.id })
     const lease = (iso: string) => Date.parse(iso) - nowMs
-    expect(lease(claimed!.claim.leaseExpiresAt)).toBeGreaterThan(1790_000)
+    expect(lease(claimed!.claim.leaseExpiresAt!)).toBeGreaterThan(1790_000)
     const beat = await as("v").processing.heartbeat(claimed!.item.id)
     expect(lease(beat.leaseExpiresAt!)).toBeGreaterThan(1790_000)
     const short = await as("v").processing.heartbeat(claimed!.item.id, {
@@ -187,7 +187,7 @@ describe("tube pipeline settings", () => {
     // Other tubes keep the server default (60 s here).
     await as("p").items.push(images.id, { payload: {} })
     const other = await as("v").processing.claim({ tubeId: images.id })
-    expect(lease(other!.claim.leaseExpiresAt)).toBeLessThanOrEqual(60_000)
+    expect(lease(other!.claim.leaseExpiresAt!)).toBeLessThanOrEqual(60_000)
 
     const cleared = await admin().tubes.update(videos.id, {
       leaseSeconds: null,

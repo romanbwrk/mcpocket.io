@@ -132,14 +132,14 @@ describe("search, filter & bulk REST routes", () => {
     res = await bulkRoute.PATCH(
       req(
         "/api/items/bulk",
-        json("PATCH", { items: [{ id: ids[0], status: "pending" }] })
+        json("PATCH", { items: [{ id: ids[0], status: "processing" }] })
       )
     )
     body = await res.json()
     expect(body.results[0]).toMatchObject({
       ok: false,
       id: ids[0],
-      error: { code: "conflict" },
+      error: { code: "validation_error" },
     })
   })
 

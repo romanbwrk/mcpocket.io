@@ -14,10 +14,15 @@ export const JsonObjectSchema = z.record(z.string(), z.unknown())
 
 /** Upper bound of any lease (claim / heartbeat / tube default), 24 h. */
 export const MAX_LEASE_SECONDS = 86_400
+/**
+ * Lease length in seconds: 1..`MAX_LEASE_SECONDS`, or `0` = the lease never
+ * expires (the item stays `processing` until complete / fail / release or a
+ * manual status change; `leaseExpiresAt` is `null`).
+ */
 export const LeaseSecondsSchema = z.coerce
   .number()
   .int()
-  .min(1)
+  .min(0)
   .max(MAX_LEASE_SECONDS)
 
 /** Max pipeline hand-off targets per tube (`Tube.nextTubeIds`). */
@@ -59,7 +64,8 @@ export const TubeSchema = z.object({
   retryPolicy: RetryPolicySchema.optional(),
   /**
    * Default lease (seconds) for claims / heartbeats in this tube, e.g. long
-   * video jobs; unset = the server default (`MCPOCKET_LEASE_SECONDS`).
+   * video jobs; `0` = leases never expire; unset = the server default
+   * (`MCPOCKET_LEASE_SECONDS`).
    */
   leaseSeconds: LeaseSecondsSchema.optional(),
   /**
@@ -99,6 +105,7 @@ export const ItemSchema = z.object({
   tags: z.array(z.string()),
   priority: z.number().int(),
   assignedAgent: z.string().nullable().optional(),
+  /** Lease deadline of a `processing` item; `null` = the lease never expires. */
   leaseExpiresAt: TimestampSchema.nullable().optional(),
   attempts: z.number().int().nonnegative(),
   /** `retry` items are not claimable before this time (backoff). */

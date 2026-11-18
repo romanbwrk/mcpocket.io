@@ -10,9 +10,11 @@ import {
 import { PageInputSchema, type PageResult } from "../domain/pagination"
 import {
   IdSchema,
+  ITEM_STATUSES,
   LeaseSecondsSchema,
   MAX_NEXT_TUBES,
   TubeSchema,
+  type ItemStatus,
   type Tube,
 } from "../domain/schemas"
 import type { Patch, Repositories } from "../storage"
@@ -88,8 +90,19 @@ export const ListTubesInputSchema = PageInputSchema.extend({
     (v) => (v === "null" ? null : v),
     FolderRefSchema.optional()
   ),
+  /** Only the tube(s) with exactly this name (case-sensitive). */
+  name: z.string().min(1).max(200).optional(),
+  /** Add `counts` (non-deleted items per status) to each tube. */
+  withCounts: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .transform((v) => v === true || v === "true" || v === "1")
+    .default(false),
 })
 export type ListTubesInput = z.input<typeof ListTubesInputSchema>
+
+/** Non-deleted items of a tube per status (`list_tubes { withCounts }`). */
+export type TubeCounts = Record<ItemStatus, number>
+export type TubeWithCounts = Tube & { counts?: TubeCounts }
 
 /**
  * Copies a tube's settings (description, enabled, schema, retry policy).
@@ -159,28 +172,55 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
     return folder
   }
 
+  /** Non-deleted items of a tube per status (one count query per status). */
+  async function countsOf(tubeId: string): Promise<TubeCounts> {
+    const counts = await Promise.all(
+      ITEM_STATUSES.map((status) => storage.items.count({ tubeId, status }))
+    )
+    return Object.fromEntries(
+      ITEM_STATUSES.map((status, i) => [status, counts[i]])
+    ) as TubeCounts
+  }
+
   const service = {
-    async list(input: unknown = {}): Promise<PageResult<Tube>> {
-      const { offset, limit, folderId } = ListTubesInputSchema.parse(input)
+    async list(input: unknown = {}): Promise<PageResult<TubeWithCounts>> {
+      const { offset, limit, folderId, name, withCounts } =
+        ListTubesInputSchema.parse(input)
       ac.require("read")
-      if (ac.restricted) {
-        const scope = await ac.view()
-        if (folderId && !scope.canSeeFolder(folderId)) {
-          throw new NotFoundError("Folder", folderId)
-        }
-        const visible = (await storage.tubes.list({ folderId })).filter((t) =>
-          scope.canAccessTube(t)
-        )
-        return {
-          data: visible.slice(offset, offset + limit),
-          page: { offset, limit, total: visible.length },
-        }
+      const page = await listPage()
+      if (!withCounts) return page
+      return {
+        ...page,
+        data: await Promise.all(
+          page.data.map(async (tube) => ({
+            ...tube,
+            counts: await countsOf(tube.id),
+          }))
+        ),
       }
-      const [data, total] = await Promise.all([
-        storage.tubes.list({ folderId, offset, limit }),
-        storage.tubes.count({ folderId }),
-      ])
-      return { data, page: { offset, limit, total } }
+
+      async function listPage(): Promise<PageResult<Tube>> {
+        if (ac.restricted || name !== undefined) {
+          const scope = ac.restricted ? await ac.view() : undefined
+          if (folderId && scope && !scope.canSeeFolder(folderId)) {
+            throw new NotFoundError("Folder", folderId)
+          }
+          const visible = (await storage.tubes.list({ folderId })).filter(
+            (t) =>
+              (name === undefined || t.name === name) &&
+              (!scope || scope.canAccessTube(t))
+          )
+          return {
+            data: visible.slice(offset, offset + limit),
+            page: { offset, limit, total: visible.length },
+          }
+        }
+        const [data, total] = await Promise.all([
+          storage.tubes.list({ folderId, offset, limit }),
+          storage.tubes.count({ folderId }),
+        ])
+        return { data, page: { offset, limit, total } }
+      }
     },
 
     async get(id: string): Promise<Tube> {
@@ -360,11 +400,15 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
 
     /**
      * Deletes a tube that holds no (non-deleted) items. With `force: true`
-     * the tube is deleted together with all of its items.
+     * the tube is deleted together with all of its items, in one atomic
+     * write. Returns how many non-deleted items went with it.
      */
-    async delete(id: string, options?: { force?: boolean }): Promise<void> {
+    async delete(
+      id: string,
+      options?: { force?: boolean }
+    ): Promise<{ deletedItems: number }> {
       ac.require("structure:manage")
-      await transact(ctx, async (repos) => {
+      return transact(ctx, async (repos) => {
         const tube = await requireTube(repos, id)
         ac.assertTube(await ac.view(repos), tube)
         const items = await repos.items.count({ tubeId: id })
@@ -383,6 +427,7 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
         for (const item of tombstones) await repos.items.delete(item.id)
         await repos.tubes.delete(id)
         emit(ctx, tubeEvent(actor, "tube.deleted", tube, now()))
+        return { deletedItems: items }
       })
     },
   }

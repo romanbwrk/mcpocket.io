@@ -230,8 +230,8 @@ describe("dashboard server actions", () => {
     })
     ok(await updateItemAction(item.id, { payload: { email: "x@y.z" } }))
     expect(
-      await updateItemAction(item.id, { status: "completed" })
-    ).toMatchObject({ ok: false, error: { code: "conflict" } })
+      await updateItemAction(item.id, { status: "processing" })
+    ).toMatchObject({ ok: false, error: { code: "validation_error" } })
     ok(await updateItemAction(item.id, { status: "cancelled" }))
     ok(await reassignItemAction(item.id, "bot-3"))
     const deleted = ok(await deleteItemAction(item.id))
