@@ -99,6 +99,44 @@ docker compose down -v                   # stop AND delete all data
 - A bind mount instead of the named volume (`./data:/app/data`) works too;
   the directory must be writable by uid 1000 (`sudo chown 1000:1000 data`).
 
+### Prebuilt image (GHCR)
+
+Instead of building locally you can pull the published image
+`ghcr.io/romanbwrk/mcpocket.io` (`linux/amd64` and `linux/arm64`):
+
+| Tag | Points to |
+|---|---|
+| `latest` | the newest build of `main` or the newest `v*` release (pre-releases excluded) |
+| `1.2.3`, `1.2` | a `v1.2.3` release / the newest patch of `1.2` |
+| `main`, `sha-<short>` | the newest build of `main` / one exact commit |
+
+Compose uses a local `mcpocket:<MCPOCKET_IMAGE_TAG>` image when it exists and
+only builds when it is missing, so tag the pulled image and start without
+`--build`:
+
+```bash
+docker pull ghcr.io/romanbwrk/mcpocket.io:latest
+docker tag ghcr.io/romanbwrk/mcpocket.io:latest mcpocket:latest
+docker compose up -d                     # upgrade: pull + tag again, then up -d
+```
+
+Or run it without Compose:
+
+```bash
+docker run -d --name mcpocket --restart unless-stopped -p 3000:3000 \
+  --env-file .env -e STORAGE_DRIVER=sqlite \
+  -v mcpocket-data:/app/data ghcr.io/romanbwrk/mcpocket.io:latest
+```
+
+(The image defaults to `STORAGE_DRIVER=json`; `-e STORAGE_DRIVER=sqlite`
+matches what Compose uses.)
+
+Images are published by the manual
+[`Docker image`](.github/workflows/docker.yml) workflow: run it from the
+Actions tab (or `gh workflow run docker.yml --ref main` / `--ref v1.2.3`).
+Only runs off `main` or a `v*` tag publish. A new GHCR package is private;
+make it public in the package settings to allow anonymous pulls.
+
 ### Storage drivers
 
 `STORAGE_DRIVER` selects where data lives. `json` and `sqlite` run inside the
