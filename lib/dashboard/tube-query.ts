@@ -17,6 +17,8 @@ import { ITEM_STATUSES, type ItemStatus } from "@mcpocket/core/domain/schemas"
 
 export const PAGE_SIZES = [25, 50, 100] as const
 export const DEFAULT_PAGE_SIZE = 25
+/** Items fetched per infinite-scroll batch of the tube preview tab. */
+export const PREVIEW_BATCH_SIZE = 20
 
 export type PayloadFilterRow = {
   /** Dotted path into the payload (`customer.city`). */

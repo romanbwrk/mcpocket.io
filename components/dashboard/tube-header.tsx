@@ -1,5 +1,6 @@
 import {
   ChevronRightIcon,
+  EyeIcon,
   ImageIcon,
   InboxIcon,
   ListIcon,
@@ -49,21 +50,22 @@ async function folderPath(
   return path
 }
 
-export type TubeTab = "items" | "media"
+export type TubeTab = "items" | "preview" | "media"
 
 const TABS: { id: TubeTab; label: string; icon: typeof ListIcon }[] = [
   { id: "items", label: "Items", icon: ListIcon },
+  { id: "preview", label: "Preview", icon: EyeIcon },
   { id: "media", label: "Media", icon: ImageIcon },
 ]
 
 const tabHref = (tubeId: string, tab: TubeTab) =>
   tab === "items"
     ? `/dashboard/tubes/${tubeId}`
-    : `/dashboard/tubes/${tubeId}/media`
+    : `/dashboard/tubes/${tubeId}/${tab}`
 
 /**
  * Shared header of the tube pages: breadcrumb, name, actions (MCP, import,
- * reset, clone, settings) and the Items / Media tabs.
+ * reset, clone, settings) and the Items / Preview / Media tabs.
  */
 export async function TubeHeader({
   services,
