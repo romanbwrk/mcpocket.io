@@ -1,5 +1,7 @@
 import "server-only"
 
+import appPackage from "@/package.json"
+
 import {
   ROLES,
   ROLE_CAPABILITIES,
@@ -8,11 +10,7 @@ import {
 } from "@mcpocket/core/domain/access"
 import { ITEM_STATUSES } from "@mcpocket/core/domain/schemas"
 import { MCP_RESOURCES } from "@mcpocket/core/mcp/resources"
-import {
-  MCP_INSTRUCTIONS,
-  MCP_SERVER_NAME,
-  MCP_SERVER_VERSION,
-} from "@mcpocket/core/mcp/server"
+import { MCP_INSTRUCTIONS, MCP_SERVER_NAME } from "@mcpocket/core/mcp/server"
 import { LEGACY_MESSAGES_PATH, LEGACY_SSE_PATH } from "@mcpocket/core/mcp/sse"
 import { toInputJsonSchema, type McpToolDefinition } from "@mcpocket/core/mcp/tools"
 import { folderTools } from "@mcpocket/core/mcp/tools/folders"
@@ -165,7 +163,7 @@ export function getMcpOverview(baseUrl: string, target?: ScopeTarget) {
   return {
     server: {
       name: MCP_SERVER_NAME,
-      version: MCP_SERVER_VERSION,
+      version: appPackage.version,
       instructions: MCP_INSTRUCTIONS,
     },
     endpoints: mcpEndpoints(baseUrl, target),
