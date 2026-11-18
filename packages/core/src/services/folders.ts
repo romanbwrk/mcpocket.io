@@ -13,7 +13,7 @@ import type { Patch, Repositories } from "../storage"
 
 import { createAccessControl } from "./access"
 import type { ServiceContext } from "./context"
-import { emit, folderEvent, transact } from "./events"
+import { emit, folderEvent, transact, tubeEvent } from "./events"
 
 const NameSchema = FolderSchema.shape.name
 const DescriptionSchema = z.string().max(2000)
@@ -158,24 +158,52 @@ export function createFolderService(ctx: ServiceContext, actor: Actor) {
       })
     },
 
-    /** Deletes an empty folder (no subfolders, no tubes). */
-    async delete(id: string): Promise<void> {
+    /**
+     * Deletes an empty folder (no subfolders, no tubes). With
+     * `recursive: true` the whole subtree goes too: subfolders, their tubes
+     * and every item in those tubes.
+     */
+    async delete(id: string, options?: { recursive?: boolean }): Promise<void> {
       ac.require("structure:manage")
       await transact(ctx, async (repos) => {
         const folder = await requireFolder(repos, id)
         ac.assertFolderWritable(await ac.view(repos), id)
-        const [subfolders, tubes] = await Promise.all([
-          repos.folders.count({ parentId: id }),
-          repos.tubes.count({ folderId: id }),
-        ])
-        if (subfolders > 0 || tubes > 0) {
-          throw new ConflictError(
-            `Folder "${id}" is not empty (${subfolders} subfolder(s), ${tubes} tube(s))`,
-            { subfolders, tubes }
+        if (!options?.recursive) {
+          const [subfolders, tubes] = await Promise.all([
+            repos.folders.count({ parentId: id }),
+            repos.tubes.count({ folderId: id }),
+          ])
+          if (subfolders > 0 || tubes > 0) {
+            throw new ConflictError(
+              `Folder "${id}" is not empty (${subfolders} subfolder(s), ${tubes} tube(s))`,
+              { subfolders, tubes }
+            )
+          }
+          await repos.folders.delete(id)
+          emit(ctx, folderEvent(actor, "folder.deleted", folder, now()))
+          return
+        }
+        // Collect the subtree breadth-first, then delete deepest first.
+        const subtree: Folder[] = [folder]
+        for (let i = 0; i < subtree.length; i++) {
+          subtree.push(
+            ...(await repos.folders.list({ parentId: subtree[i].id }))
           )
         }
-        await repos.folders.delete(id)
-        emit(ctx, folderEvent(actor, "folder.deleted", folder, now()))
+        const at = now()
+        for (const f of subtree.reverse()) {
+          for (const tube of await repos.tubes.list({ folderId: f.id })) {
+            const items = await repos.items.list({
+              tubeId: tube.id,
+              includeDeleted: true,
+            })
+            for (const item of items) await repos.items.delete(item.id)
+            await repos.tubes.delete(tube.id)
+            emit(ctx, tubeEvent(actor, "tube.deleted", tube, at))
+          }
+          await repos.folders.delete(f.id)
+          emit(ctx, folderEvent(actor, "folder.deleted", f, at))
+        }
       })
     },
 

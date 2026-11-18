@@ -358,20 +358,24 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
       return service.update(id, { folderId })
     },
 
-    /** Deletes a tube that holds no (non-deleted) items. */
-    async delete(id: string): Promise<void> {
+    /**
+     * Deletes a tube that holds no (non-deleted) items. With `force: true`
+     * the tube is deleted together with all of its items.
+     */
+    async delete(id: string, options?: { force?: boolean }): Promise<void> {
       ac.require("structure:manage")
       await transact(ctx, async (repos) => {
         const tube = await requireTube(repos, id)
         ac.assertTube(await ac.view(repos), tube)
         const items = await repos.items.count({ tubeId: id })
-        if (items > 0) {
+        if (items > 0 && !options?.force) {
           throw new ConflictError(
             `Tube "${id}" is not empty (${items} item(s))`,
             { items }
           )
         }
-        // Soft-deleted items are tombstones only; purge them with the tube.
+        // Remaining items (soft-deleted tombstones, or everything when forced)
+        // are purged with the tube.
         const tombstones = await repos.items.list({
           tubeId: id,
           includeDeleted: true,

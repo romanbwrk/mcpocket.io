@@ -57,12 +57,13 @@ export async function moveFolderAction(
   return run((s) => s.folders.update(id, { parentId }))
 }
 
-/** Non-empty folder → `conflict`. */
+/** Non-empty folder → `conflict`, unless `recursive` (deletes the whole subtree). */
 export async function deleteFolderAction(
-  id: string
+  id: string,
+  options?: { recursive?: boolean }
 ): Promise<ActionResult<{ id: string }>> {
   return run(async (s) => {
-    await s.folders.delete(id)
+    await s.folders.delete(id, { recursive: options?.recursive === true })
     return { id }
   })
 }
@@ -90,12 +91,13 @@ export async function moveTubeAction(
   return run((s) => s.tubes.move(id, folderId))
 }
 
-/** Tube with items → `conflict`. */
+/** Tube with items → `conflict`, unless `force` (deletes its items too). */
 export async function deleteTubeAction(
-  id: string
+  id: string,
+  options?: { force?: boolean }
 ): Promise<ActionResult<{ id: string }>> {
   return run(async (s) => {
-    await s.tubes.delete(id)
+    await s.tubes.delete(id, { force: options?.force === true })
     return { id }
   })
 }

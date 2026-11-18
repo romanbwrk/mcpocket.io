@@ -192,6 +192,40 @@ describe("tube service", () => {
       // folder is now empty
       await services.folders.delete(f.id)
     })
+
+    it("force-deletes a tube together with its items", async () => {
+      const t = await services.tubes.create({ name: "t" })
+      const item = await storage.items.create(makeItem(t.id))
+      await services.tubes.delete(t.id, { force: true })
+      await expect(services.tubes.get(t.id)).rejects.toBeInstanceOf(
+        NotFoundError
+      )
+      expect(await storage.items.get(item.id)).toBeNull()
+    })
+
+    it("recursively deletes a folder subtree with tubes and items", async () => {
+      const a = await services.folders.create({ name: "a" })
+      const b = await services.folders.create({ name: "b", parentId: a.id })
+      const keep = await services.folders.create({ name: "keep" })
+      const t1 = await services.tubes.create({ folderId: a.id, name: "t1" })
+      const t2 = await services.tubes.create({ folderId: b.id, name: "t2" })
+      const tk = await services.tubes.create({ folderId: keep.id, name: "tk" })
+      const i1 = await storage.items.create(makeItem(t1.id))
+      const i2 = await storage.items.create(makeItem(t2.id))
+      const ik = await storage.items.create(makeItem(tk.id))
+      await services.folders.delete(a.id, { recursive: true })
+      for (const id of [a.id, b.id]) {
+        expect(await storage.folders.get(id)).toBeNull()
+      }
+      for (const id of [t1.id, t2.id]) {
+        expect(await storage.tubes.get(id)).toBeNull()
+      }
+      expect(await storage.items.get(i1.id)).toBeNull()
+      expect(await storage.items.get(i2.id)).toBeNull()
+      expect(await storage.folders.get(keep.id)).toBeTruthy()
+      expect(await storage.tubes.get(tk.id)).toBeTruthy()
+      expect(await storage.items.get(ik.id)).toBeTruthy()
+    })
   })
 
   it("creates, lists and moves top-level tubes (no folder)", async () => {

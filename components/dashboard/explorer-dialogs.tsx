@@ -542,15 +542,19 @@ function DeleteConfirm({ dialog, close }: BodyProps) {
     : dialog.kind === "deleteTube"
       ? dialog.tube
       : null
+  // A "not empty" conflict turns the dialog into a second, explicit
+  // confirmation that also deletes the contents.
+  const notEmpty = error?.code === "conflict" ? error : null
   if (!subject) return null
 
   function onConfirm() {
     if (!subject) return
+    const withContents = notEmpty !== null
     run<unknown>(
       () =>
         isFolder
-          ? deleteFolderAction(subject.id)
-          : deleteTubeAction(subject.id),
+          ? deleteFolderAction(subject.id, { recursive: withContents })
+          : deleteTubeAction(subject.id, { force: withContents }),
       () => {
         toast.success(`Deleted “${subject.name}”`)
         close()
@@ -569,13 +573,28 @@ function DeleteConfirm({ dialog, close }: BodyProps) {
       <DialogHeader>
         <DialogTitle>Delete {isFolder ? "folder" : "tube"}?</DialogTitle>
         <DialogDescription>
-          “{subject.name}” will be permanently deleted.{" "}
-          {isFolder
-            ? "Only empty folders (no subfolders or tubes) can be deleted."
-            : "Only tubes without items can be deleted."}
+          “{subject.name}” will be permanently deleted.
         </DialogDescription>
       </DialogHeader>
-      <ActionError error={error} />
+      {notEmpty ? (
+        <div
+          role="alert"
+          className="border border-destructive/30 bg-destructive/10 p-2.5 text-xs text-destructive"
+        >
+          <p className="font-medium">
+            This {isFolder ? "folder" : "tube"} is not empty
+            {describeContents(notEmpty.details)}.
+          </p>
+          <p>
+            {isFolder
+              ? "All subfolders, tubes and their items will be permanently deleted as well."
+              : "All of its items will be permanently deleted as well."}{" "}
+            This cannot be undone.
+          </p>
+        </div>
+      ) : (
+        <ActionError error={error} />
+      )}
       <DialogFooter>
         <DialogClose render={<Button type="button" variant="outline" />}>
           Cancel
@@ -586,9 +605,24 @@ function DeleteConfirm({ dialog, close }: BodyProps) {
           disabled={pending}
           onClick={onConfirm}
         >
-          {pending ? "Deleting…" : "Delete"}
+          {pending ? "Deleting…" : notEmpty ? "Delete everything" : "Delete"}
         </Button>
       </DialogFooter>
     </div>
   )
+}
+
+/** " (2 subfolders, 1 tube)" from a not-empty conflict's details. */
+function describeContents(details: unknown): string {
+  if (!details || typeof details !== "object") return ""
+  const d = details as Record<string, unknown>
+  const parts: string[] = []
+  const add = (n: unknown, one: string, many: string) => {
+    if (typeof n === "number" && n > 0)
+      parts.push(`${n} ${n === 1 ? one : many}`)
+  }
+  add(d.subfolders, "subfolder", "subfolders")
+  add(d.tubes, "tube", "tubes")
+  add(d.items, "item", "items")
+  return parts.length ? ` (${parts.join(", ")})` : ""
 }
