@@ -3,7 +3,6 @@ import { redirect } from "next/navigation"
 
 import { BrandPanel } from "@/components/brand-panel"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { buttonVariants } from "@/components/ui/button"
 import {
   Card,
   CardContent,
@@ -12,10 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { getSession } from "@/lib/auth/server"
-import {
-  loginModeFromEnv,
-  ssoLoginRedirectUrl,
-} from "@mcpocket/core/auth/login-mode"
+import { loginModeFromEnv } from "@mcpocket/core/auth/login-mode"
 import {
   adminConfigFromEnv,
   isAdminConfigured,
@@ -31,10 +27,13 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { next } = await searchParams
   if (await getSession()) redirect(safeRedirectPath(next))
   // With MCPOCKET_SSO_LOGIN_URL set, proxy.ts sends anonymous visitors there
-  // before this page renders; it only shows here if that would loop.
+  // before this page renders.
   const mode = loginModeFromEnv()
   const configured = isAdminConfigured(adminConfigFromEnv())
   const ssoEnabled = ssoConfigFromEnv() !== null
+  // Cloud mode: sign-in happens on the control plane, so there is nothing
+  // to do here — send the visitor home.
+  if (!configured && ssoEnabled) redirect("/")
 
   return (
     <main className="relative flex min-h-svh items-center justify-center p-6">
@@ -51,15 +50,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
           <CardContent>
             {configured ? (
               <LoginForm next={safeRedirectPath(next, "") || undefined} />
-            ) : ssoEnabled || !mode.passwordLogin ? (
-              <SsoOnlyNotice
-                ssoEnabled={ssoEnabled}
-                signInHref={
-                  mode.ssoLoginUrl
-                    ? ssoLoginRedirectUrl(mode.ssoLoginUrl, next)
-                    : undefined
-                }
-              />
+            ) : !mode.passwordLogin ? (
+              <SsoMisconfiguredNotice />
             ) : (
               <SetupNotice />
             )}
@@ -87,41 +79,19 @@ MCPOCKET_SESSION_SECRET=<openssl rand -base64 32>`}
   )
 }
 
-/** Shown instead of the form when password login is off or not set up but SSO is. */
-function SsoOnlyNotice({
-  ssoEnabled,
-  signInHref,
-}: {
-  ssoEnabled: boolean
-  signInHref?: string
-}) {
+/** Password login is switched off but no SSO is configured. */
+function SsoMisconfiguredNotice() {
   return (
     <div className="flex flex-col gap-3 text-xs">
       <p className="font-medium">This dashboard uses single sign-on.</p>
-      {ssoEnabled ? (
-        <p className="text-muted-foreground">
-          Password sign-in is not available here. Sign in through your
-          organization&apos;s sign-in page (for example MCPocket Cloud); it
-          brings you back to the dashboard.
-        </p>
-      ) : (
-        <p className="text-muted-foreground">
-          Password sign-in is switched off (
-          <code className="font-mono">MCPOCKET_PASSWORD_LOGIN=false</code>) but
-          no single sign-on is configured. Set{" "}
-          <code className="font-mono">MCPOCKET_SSO_SECRET</code> and{" "}
-          <code className="font-mono">MCPOCKET_SSO_LOGIN_URL</code>, or enable
-          password sign-in again, and restart.
-        </p>
-      )}
-      {ssoEnabled && signInHref && (
-        <a
-          href={signInHref}
-          className={buttonVariants({ size: "lg", className: "self-start" })}
-        >
-          Continue to sign in
-        </a>
-      )}
+      <p className="text-muted-foreground">
+        Password sign-in is switched off (
+        <code className="font-mono">MCPOCKET_PASSWORD_LOGIN=false</code>) but
+        no single sign-on is configured. Set{" "}
+        <code className="font-mono">MCPOCKET_SSO_SECRET</code> and{" "}
+        <code className="font-mono">MCPOCKET_SSO_LOGIN_URL</code>, or enable
+        password sign-in again, and restart.
+      </p>
     </div>
   )
 }
