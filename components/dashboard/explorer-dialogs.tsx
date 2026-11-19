@@ -39,9 +39,11 @@ import {
   type ExplorerFolder,
   type ExplorerTube,
 } from "@/lib/dashboard/explorer"
+import type { ShareTarget } from "@/lib/dashboard/share"
 
 import { ActionError } from "./action-error"
 import { useExpandedFolders } from "./expanded-store"
+import { ShareLinkDialogBody } from "./share-link-dialog"
 import { useServerAction } from "./use-server-action"
 
 export type ExplorerDialog =
@@ -54,6 +56,8 @@ export type ExplorerDialog =
   | { kind: "moveTube"; tube: ExplorerTube }
   | { kind: "cloneTube"; tube: ExplorerTube }
   | { kind: "deleteTube"; tube: ExplorerTube }
+  /** Public share link (+ QR code) of a tube or folder. */
+  | { kind: "share"; target: ShareTarget }
 
 type ExplorerContextValue = {
   tree: ExplorerFolder[]
@@ -120,6 +124,8 @@ function dialogKey(d: ExplorerDialog): string {
     case "moveFolder":
     case "deleteFolder":
       return `${d.kind}:${d.folder.id}`
+    case "share":
+      return `${d.kind}:${d.target.kind}:${d.target.id}`
     default:
       return `${d.kind}:${d.tube.id}`
   }
@@ -146,6 +152,8 @@ function DialogBody(props: BodyProps) {
       return <CreateTubeForm {...props} />
     case "cloneTube":
       return <CloneTubeForm {...props} />
+    case "share":
+      return <ShareLinkDialogBody target={props.dialog.target} />
   }
 }
 

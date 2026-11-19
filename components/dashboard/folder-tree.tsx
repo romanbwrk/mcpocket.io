@@ -14,6 +14,7 @@ import {
   PencilIcon,
   PlugIcon,
   PlusIcon,
+  Share2Icon,
   SquarePlusIcon,
   Trash2Icon,
 } from "lucide-react"
@@ -235,6 +236,16 @@ function FolderNode({
             >
               <PlugIcon /> Connect via MCP
             </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                openDialog({
+                  kind: "share",
+                  target: { kind: "folder", id: folder.id, name: folder.name },
+                })
+              }
+            >
+              <Share2Icon /> Share link
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
@@ -334,6 +345,16 @@ function TubeNode({
               render={<Link href={`/dashboard/mcp?tube=${tube.id}`} />}
             >
               <PlugIcon /> Connect via MCP
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() =>
+                openDialog({
+                  kind: "share",
+                  target: { kind: "tube", id: tube.id, name: tube.name },
+                })
+              }
+            >
+              <Share2Icon /> Share link
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem

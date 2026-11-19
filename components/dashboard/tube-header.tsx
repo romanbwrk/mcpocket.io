@@ -12,6 +12,7 @@ import { notFound } from "next/navigation"
 import { CloneTubeButton } from "@/components/dashboard/clone-tube-button"
 import { ImportItemsDialog } from "@/components/dashboard/import-items-dialog"
 import { ResetTubeButton } from "@/components/dashboard/reset-tube-button"
+import { ShareLinkButton } from "@/components/dashboard/share-link-button"
 import { TubeSettingsDialog } from "@/components/dashboard/tube-settings-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -126,6 +127,9 @@ export async function TubeHeader({
             <PlugIcon data-icon="inline-start" />
             MCP
           </Button>
+          <ShareLinkButton
+            target={{ kind: "tube", id: tube.id, name: tube.name }}
+          />
           <ImportItemsDialog tubeId={tube.id} enabled={tube.enabled} />
           <ResetTubeButton
             tubeId={tube.id}
