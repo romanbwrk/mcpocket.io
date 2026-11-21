@@ -47,7 +47,6 @@ import {
   type ExplorerFolder,
   type ExplorerTube,
 } from "@/lib/dashboard/explorer"
-import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
 import { useExpandedFolders } from "./expanded-store"
@@ -61,7 +60,6 @@ function useActiveTubeId(): string | null {
 
 export function FolderTree() {
   const { tree, rootTubes, openDialog } = useExplorer()
-  const isEmpty = tree.length === 0 && rootTubes.length === 0
   const { expanded, toggle, expand, collapseAll } = useExpandedFolders()
   const activeTubeId = useActiveTubeId()
   const allFolderIds = React.useMemo(
@@ -70,14 +68,6 @@ export function FolderTree() {
   )
   // Ignore stale ids (deleted folders) when deciding the toggle direction.
   const anyExpanded = allFolderIds.some((id) => expanded.has(id))
-  // Default new tubes to the folder of the tube being viewed.
-  const activeFolderId = React.useMemo(
-    () =>
-      activeTubeId
-        ? (tubeAncestorIds(tree, activeTubeId)?.at(-1) ?? null)
-        : null,
-    [tree, activeTubeId]
-  )
 
   // Reveal the selected tube (e.g. deep link / navigation from elsewhere).
   React.useEffect(() => {
@@ -111,35 +101,33 @@ export function FolderTree() {
         </SidebarGroupAction>
       </div>
       <SidebarGroupContent>
-        <Button
-          size="sm"
-          className="mb-2 w-full justify-start"
-          onClick={() =>
-            openDialog({ kind: "createTube", folderId: activeFolderId })
-          }
-        >
-          <PlusIcon /> New tube
-        </Button>
-        {isEmpty ? (
-          <div className="px-2 py-4 text-xs text-muted-foreground">
-            No tubes yet. Folders are optional; use them to group tubes.
-          </div>
-        ) : (
-          <SidebarMenu role="tree" aria-label="Folders and tubes">
-            {tree.map((folder) => (
-              <FolderNode
-                key={folder.id}
-                folder={folder}
-                expanded={expanded}
-                toggle={toggle}
-                activeTubeId={activeTubeId}
-              />
-            ))}
-            {rootTubes.map((tube) => (
-              <TubeNode key={tube.id} tube={tube} activeTubeId={activeTubeId} />
-            ))}
-          </SidebarMenu>
-        )}
+        <SidebarMenu role="tree" aria-label="Folders and tubes">
+          {tree.map((folder) => (
+            <FolderNode
+              key={folder.id}
+              folder={folder}
+              expanded={expanded}
+              toggle={toggle}
+              activeTubeId={activeTubeId}
+            />
+          ))}
+          {rootTubes.map((tube) => (
+            <TubeNode key={tube.id} tube={tube} activeTubeId={activeTubeId} />
+          ))}
+          <li className="min-w-0">
+            <TreeRow>
+              <SidebarMenuButton
+                className="text-muted-foreground"
+                onClick={() =>
+                  openDialog({ kind: "createTube", folderId: null })
+                }
+              >
+                <PlusIcon />
+                <span>New tube</span>
+              </SidebarMenuButton>
+            </TreeRow>
+          </li>
+        </SidebarMenu>
       </SidebarGroupContent>
     </SidebarGroup>
   )
@@ -171,7 +159,7 @@ function FolderNode({
         <SidebarMenuButton
           onClick={() => toggle(folder.id)}
           title={folder.description || folder.name}
-          className="group-has-data-[sidebar=menu-action]/menu-item:pr-14"
+          className="group-has-data-[sidebar=menu-action]/menu-item:pr-20"
         >
           <ChevronRightIcon
             className={cn(
@@ -183,6 +171,15 @@ function FolderNode({
           {isOpen ? <FolderOpenIcon /> : <FolderIcon />}
           <span>{folder.name}</span>
         </SidebarMenuButton>
+        <SidebarMenuAction
+          showOnHover
+          className="right-13"
+          title="Connect via MCP"
+          aria-label={`Connect ${folder.name} via MCP`}
+          render={<Link href={`/dashboard/mcp?folder=${folder.id}`} />}
+        >
+          <PlugIcon />
+        </SidebarMenuAction>
         <SidebarMenuAction
           showOnHover
           className="right-7"
@@ -256,8 +253,18 @@ function FolderNode({
           </DropdownMenuContent>
         </DropdownMenu>
       </TreeRow>
-      {isOpen && isEmpty && (
+      {isOpen && (
         <SidebarMenuSub role="group" className="mr-0 pr-0">
+          {folder.children.map((child) => (
+            <FolderNode key={child.id} folder={child} {...props} />
+          ))}
+          {folder.tubes.map((tube) => (
+            <TubeNode
+              key={tube.id}
+              tube={tube}
+              activeTubeId={props.activeTubeId}
+            />
+          ))}
           <li className="min-w-0">
             <SidebarMenuSubButton
               render={<button type="button" />}
@@ -270,20 +277,6 @@ function FolderNode({
               <span>New tube</span>
             </SidebarMenuSubButton>
           </li>
-        </SidebarMenuSub>
-      )}
-      {isOpen && !isEmpty && (
-        <SidebarMenuSub role="group" className="mr-0 pr-0">
-          {folder.children.map((child) => (
-            <FolderNode key={child.id} folder={child} {...props} />
-          ))}
-          {folder.tubes.map((tube) => (
-            <TubeNode
-              key={tube.id}
-              tube={tube}
-              activeTubeId={props.activeTubeId}
-            />
-          ))}
         </SidebarMenuSub>
       )}
     </li>
