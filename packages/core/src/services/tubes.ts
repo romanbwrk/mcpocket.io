@@ -13,9 +13,12 @@ import {
   ITEM_STATUSES,
   LeaseSecondsSchema,
   MAX_NEXT_TUBES,
+  MAX_TUBE_MEMORY_BLOCKS,
+  TubeMemoryTextSchema,
   TubeSchema,
   type ItemStatus,
   type Tube,
+  type TubeMemoryBlock,
 } from "../domain/schemas"
 import type { Patch, Repositories } from "../storage"
 
@@ -26,6 +29,7 @@ import { recordHistory } from "./history"
 
 const NameSchema = TubeSchema.shape.name
 const DescriptionSchema = z.string().max(2000)
+const InstructionsSchema = TubeSchema.shape.instructions.unwrap()
 /** JSON Schema object; checked for validity by `assertValidJsonSchema`. */
 const SchemaDefinitionSchema = z.record(z.string(), z.unknown())
 
@@ -52,6 +56,8 @@ export const CreateTubeInputSchema = z.strictObject({
   leaseSeconds: LeaseSecondsSchema.optional(),
   /** Tubes this stage hands its output to (`complete_item` `next`). */
   nextTubeIds: NextTubeIdsSchema.optional(),
+  /** How agents should work this tube (free text / Markdown). */
+  instructions: InstructionsSchema.optional(),
 })
 export type CreateTubeInput = z.input<typeof CreateTubeInputSchema>
 
@@ -72,12 +78,14 @@ export const UpdateTubeInputSchema = z
     leaseSeconds: LeaseSecondsSchema.nullable().optional(),
     /** Replaces the hand-off targets; `null` or `[]` clears them. */
     nextTubeIds: NextTubeIdsSchema.nullable().optional(),
+    /** Replaces the instructions; `null` or `""` clears them. */
+    instructions: InstructionsSchema.nullable().optional(),
     /** Moves the tube to another (existing) folder; `null` = top level. */
     folderId: FolderRefSchema.optional(),
   })
   .refine((input) => Object.values(input).some((v) => v !== undefined), {
     message:
-      "At least one of name, description, enabled, schemaDefinition, retryPolicy, leaseSeconds, nextTubeIds, folderId is required",
+      "At least one of name, description, enabled, schemaDefinition, retryPolicy, leaseSeconds, nextTubeIds, instructions, folderId is required",
   })
 export type UpdateTubeInput = z.input<typeof UpdateTubeInputSchema>
 
@@ -119,6 +127,27 @@ export const CloneTubeInputSchema = z.strictObject({
 export type CloneTubeInput = z.input<typeof CloneTubeInputSchema>
 
 export type CloneTubeResult = { tube: Tube; items: number }
+
+/** `add_tube_memory` / `update_tube_memory` body. */
+export const TubeMemoryInputSchema = z.strictObject({
+  text: TubeMemoryTextSchema,
+})
+export type TubeMemoryInput = z.input<typeof TubeMemoryInputSchema>
+
+/** What an agent needs to know before working a tube. */
+export type TubeContext = {
+  tubeId: string
+  name: string
+  instructions: string | null
+  memory: TubeMemoryBlock[]
+}
+
+export const tubeContext = (tube: Tube): TubeContext => ({
+  tubeId: tube.id,
+  name: tube.name,
+  instructions: tube.instructions ?? null,
+  memory: tube.memory ?? [],
+})
 
 /** Drops unset fields; an empty policy becomes `undefined` (= defaults). */
 function compactRetryPolicy(
@@ -182,6 +211,37 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
     ) as TubeCounts
   }
 
+  function findBlock(memory: TubeMemoryBlock[], memoryId: string) {
+    const block = memory.find((b) => b.id === memoryId)
+    if (!block) throw new NotFoundError("Memory block", memoryId)
+    return block
+  }
+
+  /** Read-modify-write of `Tube.memory` in one transaction. */
+  async function changeMemory(
+    id: string,
+    fn: (
+      memory: TubeMemoryBlock[],
+      ts: string
+    ) => { memory: TubeMemoryBlock[]; block: TubeMemoryBlock }
+  ): Promise<TubeMemoryBlock> {
+    IdSchema.parse(id)
+    ac.require("items:process")
+    return transact(ctx, async (repos) => {
+      const tube = await requireTube(repos, id)
+      ac.assertTube(await ac.view(repos), tube)
+      const ts = now()
+      const { memory, block } = fn(tube.memory ?? [], ts)
+      const updated = await repos.tubes.update(id, {
+        memory: memory.length > 0 ? memory : undefined,
+        updatedAt: ts,
+      })
+      if (!updated) throw new NotFoundError("Tube", id)
+      emit(ctx, tubeEvent(actor, "tube.updated", updated, ts))
+      return block
+    })
+  }
+
   const service = {
     async list(input: unknown = {}): Promise<PageResult<TubeWithCounts>> {
       const { offset, limit, folderId, name, withCounts } =
@@ -240,6 +300,7 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
         retryPolicy: retryInput,
         leaseSeconds,
         nextTubeIds,
+        instructions,
       } = CreateTubeInputSchema.parse(input)
       const retryPolicy = compactRetryPolicy(retryInput)
       if (schemaDefinition) assertValidJsonSchema(schemaDefinition)
@@ -259,6 +320,7 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
           ...(retryPolicy && { retryPolicy }),
           ...(leaseSeconds !== undefined && { leaseSeconds }),
           ...(nextTubeIds?.length && { nextTubeIds }),
+          ...(instructions?.trim() && { instructions }),
           createdAt: ts,
           updatedAt: ts,
         })
@@ -277,6 +339,7 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
         retryPolicy,
         leaseSeconds,
         nextTubeIds,
+        instructions,
         folderId,
       } = UpdateTubeInputSchema.parse(input)
       if (schemaDefinition) assertValidJsonSchema(schemaDefinition)
@@ -303,6 +366,9 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
         if (nextTubeIds !== undefined) {
           if (nextTubeIds?.length) await assertNextTubes(repos, nextTubeIds, id)
           patch.nextTubeIds = nextTubeIds?.length ? nextTubeIds : undefined
+        }
+        if (instructions !== undefined) {
+          patch.instructions = instructions?.trim() ? instructions : undefined
         }
         if (folderId !== undefined && folderId !== tube.folderId) {
           await requireFolder(repos, folderId)
@@ -353,6 +419,15 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
           ...(source.nextTubeIds?.length && {
             nextTubeIds: source.nextTubeIds,
           }),
+          ...(source.instructions !== undefined && {
+            instructions: source.instructions,
+          }),
+          ...(source.memory?.length && {
+            memory: source.memory.map((block) => ({
+              ...block,
+              id: ctx.newId(),
+            })),
+          }),
           createdAt: ts,
           updatedAt: ts,
         })
@@ -390,6 +465,53 @@ export function createTubeService(ctx: ServiceContext, actor: Actor) {
           }
         }
         return { tube, items }
+      })
+    },
+
+    /** Instructions and memory of a tube (needs `read`). */
+    async context(id: string): Promise<TubeContext> {
+      return tubeContext(await service.get(id))
+    },
+
+    /** Appends a memory block (needs `items:process`). */
+    async addMemory(id: string, input: unknown): Promise<TubeMemoryBlock> {
+      const { text } = TubeMemoryInputSchema.parse(input)
+      return changeMemory(id, (memory, ts) => {
+        if (memory.length >= MAX_TUBE_MEMORY_BLOCKS) {
+          throw new ConflictError(
+            `Tube memory is full (${MAX_TUBE_MEMORY_BLOCKS} blocks): update or delete a block first`,
+            { limit: MAX_TUBE_MEMORY_BLOCKS }
+          )
+        }
+        const block = { id: ctx.newId(), text, createdAt: ts, updatedAt: ts }
+        return { memory: [...memory, block], block }
+      })
+    },
+
+    /** Replaces the text of one memory block (needs `items:process`). */
+    async updateMemory(
+      id: string,
+      memoryId: string,
+      input: unknown
+    ): Promise<TubeMemoryBlock> {
+      IdSchema.parse(memoryId)
+      const { text } = TubeMemoryInputSchema.parse(input)
+      return changeMemory(id, (memory, ts) => {
+        const old = findBlock(memory, memoryId)
+        const block = { ...old, text, updatedAt: ts }
+        return {
+          memory: memory.map((b) => (b.id === memoryId ? block : b)),
+          block,
+        }
+      })
+    },
+
+    /** Removes one memory block (needs `items:process`). */
+    async deleteMemory(id: string, memoryId: string): Promise<TubeMemoryBlock> {
+      IdSchema.parse(memoryId)
+      return changeMemory(id, (memory) => {
+        const block = findBlock(memory, memoryId)
+        return { memory: memory.filter((b) => b.id !== memoryId), block }
       })
     },
 

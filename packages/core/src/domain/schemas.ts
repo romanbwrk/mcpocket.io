@@ -51,6 +51,28 @@ export const FolderSchema = z.object({
 })
 export type Folder = z.infer<typeof FolderSchema>
 
+/** Max length of `Tube.instructions`. */
+export const MAX_TUBE_INSTRUCTIONS = 50_000
+/** Max blocks in `Tube.memory`. */
+export const MAX_TUBE_MEMORY_BLOCKS = 200
+/** Max length of one memory block's text. */
+export const MAX_TUBE_MEMORY_TEXT = 10_000
+
+export const TubeMemoryTextSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_TUBE_MEMORY_TEXT)
+
+/** One memory block of a tube (`Tube.memory`). */
+export const TubeMemoryBlockSchema = z.object({
+  id: IdSchema,
+  text: TubeMemoryTextSchema,
+  createdAt: TimestampSchema,
+  updatedAt: TimestampSchema,
+})
+export type TubeMemoryBlock = z.infer<typeof TubeMemoryBlockSchema>
+
 export const TubeSchema = z.object({
   id: IdSchema,
   /** Containing folder; `null` = top level (folders are optional). */
@@ -74,6 +96,13 @@ export const TubeSchema = z.object({
    * them although they cannot see them otherwise.
    */
   nextTubeIds: z.array(IdSchema).max(MAX_NEXT_TUBES).optional(),
+  /**
+   * How to work this tube (like a skill: free text / Markdown). Shown to
+   * agents on tube-scoped MCP connections and by `get_tube_context`.
+   */
+  instructions: z.string().max(MAX_TUBE_INSTRUCTIONS).optional(),
+  /** Notes agents and users keep about the tube, oldest first. */
+  memory: z.array(TubeMemoryBlockSchema).max(MAX_TUBE_MEMORY_BLOCKS).optional(),
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
 })

@@ -3,7 +3,7 @@ import { z } from "zod"
 import { ADMIN_ACCESS, type Access } from "../domain/access"
 import type { Actor } from "../domain/actor"
 import { ForbiddenError, ValidationError } from "../domain/errors"
-import { IdSchema } from "../domain/schemas"
+import { IdSchema, type Tube } from "../domain/schemas"
 import { actorAccess, buildScopeView, getServices } from "../services"
 
 import { MCP_INSTRUCTIONS } from "./server"
@@ -160,10 +160,53 @@ export function scopedTools(
   })
 }
 
+/** Budget of memory text inlined into a tube-scoped connection's instructions. */
+export const SCOPED_MEMORY_BUDGET = 20_000
+
+/**
+ * The tube's own instructions and memory, appended to a tube-scoped
+ * connection's instructions (memory newest-first within the budget).
+ */
+export function tubeContextInstructions(
+  tube: Pick<Tube, "id" | "instructions" | "memory">
+): string {
+  const parts: string[] = []
+  if (tube.instructions?.trim()) {
+    parts.push(
+      `## Tube instructions\n\nFollow these instructions when working this tube:\n\n${tube.instructions.trim()}`
+    )
+  }
+  const memory = tube.memory ?? []
+  if (memory.length > 0) {
+    const shown: string[] = []
+    let used = 0
+    for (const block of [...memory].reverse()) {
+      const line = `- [${block.id}] ${block.text}`
+      if (used + line.length > SCOPED_MEMORY_BUDGET && shown.length > 0) break
+      shown.unshift(line)
+      used += line.length
+    }
+    const omitted = memory.length - shown.length
+    parts.push(
+      "## Tube memory\n\nNotes kept by earlier agents and users (oldest first)" +
+        (omitted > 0
+          ? `; ${omitted} older block(s) omitted — call get_tube_context for all`
+          : "") +
+        ":\n\n" +
+        shown.join("\n")
+    )
+  }
+  parts.push(
+    "Keep the tube memory useful: add_tube_memory for durable lessons (conventions, pitfalls, decisions) the next agent needs, update_tube_memory / delete_tube_memory for outdated blocks. get_tube_context returns the current instructions and memory."
+  )
+  return parts.join("\n\n")
+}
+
 export function scopedInstructions(
   target: ScopeTarget,
   name: string,
-  handoff: HandoffTube[] = []
+  handoff: HandoffTube[] = [],
+  tube?: Pick<Tube, "id" | "instructions" | "memory">
 ) {
   const next =
     handoff.length > 0
@@ -186,7 +229,9 @@ export function scopedInstructions(
         "other folders and tubes are invisible (ancestor folders appear by name only). " +
         "create_folder and create_tube place new entries in this folder unless you pass parentId / folderId; " +
         "the bound folder itself cannot be deleted or moved."
-  return `${intro}\n\n${MCP_INSTRUCTIONS}`
+  const context =
+    target.kind === "tube" && tube ? `\n\n${tubeContextInstructions(tube)}` : ""
+  return `${intro}${context}\n\n${MCP_INSTRUCTIONS}`
 }
 
 /**
@@ -201,8 +246,10 @@ export async function resolveConnectionScope(
   const services = await getServices(actor)
   let name: string
   let handoff: HandoffTube[] = []
+  let boundTube: Tube | undefined
   if (target.kind === "tube") {
     const tube = await services.tubes.get(id) // 404 unless in scope
+    boundTube = tube
     name = tube.name
     if (tube.nextTubeIds?.length) {
       // Named in the instructions: targets the key itself can reach.
@@ -240,7 +287,7 @@ export async function resolveConnectionScope(
     name,
     actor: narrowActor(actor, bound),
     tools: scopedTools(bound),
-    instructions: scopedInstructions(bound, name, handoff),
+    instructions: scopedInstructions(bound, name, handoff, boundTube),
   }
 }
 

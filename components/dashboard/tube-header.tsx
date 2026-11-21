@@ -1,4 +1,5 @@
 import {
+  BookOpenIcon,
   ChevronRightIcon,
   EyeIcon,
   ImageIcon,
@@ -51,12 +52,13 @@ async function folderPath(
   return path
 }
 
-export type TubeTab = "items" | "preview" | "media"
+export type TubeTab = "items" | "preview" | "media" | "context"
 
 const TABS: { id: TubeTab; label: string; icon: typeof ListIcon }[] = [
   { id: "items", label: "Items", icon: ListIcon },
   { id: "preview", label: "Preview", icon: EyeIcon },
   { id: "media", label: "Media", icon: ImageIcon },
+  { id: "context", label: "Instructions & memory", icon: BookOpenIcon },
 ]
 
 const tabHref = (tubeId: string, tab: TubeTab) =>
@@ -111,6 +113,7 @@ export async function TubeHeader({
               {tube.enabled ? "Enabled" : "Disabled"}
             </Badge>
             {tube.schemaDefinition && <Badge variant="outline">Schema</Badge>}
+            {tube.instructions && <Badge variant="outline">Instructions</Badge>}
           </div>
           {tube.description && (
             <p className="text-xs text-muted-foreground">{tube.description}</p>

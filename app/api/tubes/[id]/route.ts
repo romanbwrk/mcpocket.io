@@ -9,7 +9,8 @@ export const GET = apiHandler<Params>(async ({ services, params }) => ({
 
 /**
  * PATCH /api/tubes/{id}
- * { name?, description?: string|null, enabled?, schemaDefinition?: object|null, folderId? }
+ * { name?, description?: string|null, enabled?, schemaDefinition?: object|null,
+ *   instructions?: string|null, folderId? }
  * — moving = folderId
  */
 export const PATCH = apiHandler<Params>(

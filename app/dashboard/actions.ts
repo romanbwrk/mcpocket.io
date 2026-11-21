@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache"
 
 import { getUserServices } from "@/lib/auth/server"
 import type { ActionResult } from "@/lib/dashboard/explorer"
-import type { Folder, Item, Tube } from "@mcpocket/core/domain/schemas"
+import type {
+  Folder,
+  Item,
+  Tube,
+  TubeMemoryBlock,
+} from "@mcpocket/core/domain/schemas"
 import type { Services } from "@mcpocket/core/services"
 import type {
   BulkResult,
@@ -81,6 +86,39 @@ export async function updateTubeAction(
   input: unknown
 ): Promise<ActionResult<Tube>> {
   return run((s) => s.tubes.update(id, input))
+}
+
+/** Replaces the tube's instructions; `""` clears them. */
+export async function updateTubeInstructionsAction(
+  id: string,
+  instructions: string
+): Promise<ActionResult<Tube>> {
+  return run((s) => s.tubes.update(id, { instructions }))
+}
+
+/** Appends a memory block `{ text }`. */
+export async function addTubeMemoryAction(
+  id: string,
+  text: string
+): Promise<ActionResult<TubeMemoryBlock>> {
+  return run((s) => s.tubes.addMemory(id, { text }))
+}
+
+/** Replaces the text of one memory block. */
+export async function updateTubeMemoryAction(
+  id: string,
+  memoryId: string,
+  text: string
+): Promise<ActionResult<TubeMemoryBlock>> {
+  return run((s) => s.tubes.updateMemory(id, memoryId, { text }))
+}
+
+/** Removes one memory block. */
+export async function deleteTubeMemoryAction(
+  id: string,
+  memoryId: string
+): Promise<ActionResult<TubeMemoryBlock>> {
+  return run((s) => s.tubes.deleteMemory(id, memoryId))
 }
 
 /** `folderId: null` moves the tube to the top level. */
